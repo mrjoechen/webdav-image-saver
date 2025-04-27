@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "WebDAV Image Saver",
+    "version": "1.0",
+    "description": "Saves images from webpages to a WebDAV server.",
+    "permissions": [
+      "contextMenus",
+      "storage",
+      "scripting",
+      "notifications"
+    ],
+    "host_permissions": [
+       "<all_urls>"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "options_page": "options.html",
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "css": ["styles.css"]
+      }
+    ],
+    "action": {
+      "default_icon": {
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
+      },
+      "default_title": "WebDAV Image Saver Settings"
+    },
+    "icons": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  }
