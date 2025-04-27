@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebDAV Saver Options</title>
+    <meta charset="UTF-8">
+    <!-- 引入 Material Design Lite (示例) 或其他 MD 库/自定义 CSS -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+    <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body class="mdl-color--grey-100">
+    <div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+        <header class="mdl-layout__header">
+            <div class="mdl-layout__header-row">
+                <span class="mdl-layout-title">WebDAV Saver Configuration</span>
+            </div>
+        </header>
+        <main class="mdl-layout__content" style="padding: 20px;">
+            <h4>Manage WebDAV Servers</h4>
+
+            <div id="server-list" class="mdl-grid">
+                <!-- Server configurations will be loaded here -->
+            </div>
+
+            <button id="add-server-btn" class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect mdl-button--colored">
+                <i class="material-icons">add</i>
+            </button>
+
+            <!-- Dialog/Form for adding/editing server -->
+            <dialog id="server-dialog" class="mdl-dialog">
+                <h4 class="mdl-dialog__title">Server Details</h4>
+                <div class="mdl-dialog__content">
+                    <input type="hidden" id="edit-id"> <!-- For editing existing server -->
+                     <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                        <input class="mdl-textfield__input" type="text" id="server-name" placeholder="Configuration Name">
+                        <label class="mdl-textfield__label" for="server-name"></label>
+                    </div>
+                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                        <input class="mdl-textfield__input" type="url" id="server-url" placeholder="WebDAV URL">
+                        <label class="mdl-textfield__label" for="server-url"></label>
+                    </div>
+                     <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                        <input class="mdl-textfield__input" type="text" id="server-username" placeholder="Username">
+                        <label class="mdl-textfield__label" for="server-username"></label>
+                    </div>
+                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                        <input class="mdl-textfield__input" type="password" id="server-password" placeholder="Password">
+                        <label class="mdl-textfield__label" for="server-password"></label>
+                    </div>
+                    <button id="test-connection-btn" type="button" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect">
+                        Test Connection
+                    </button>
+                    <div id="connection-status" style="margin-top: 10px;"></div>
+                    <div id="folder-selection" style="display: none; margin-top: 10px;">
+                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                             <select class="mdl-textfield__input" id="server-folder">
+                                <!-- Options will be populated after successful test -->
+                                <option value="/">/ (Root)</option>
+                             </select>
+                             <label class="mdl-textfield__label" for="server-folder">Target Folder</label>
+                        </div>
+                         <p><small>Enter a new folder path (e.g., /MyImages) or select an existing one.</small></p>
+                         <input class="mdl-textfield__input" type="text" id="new-folder-path" placeholder="Or type new folder path here">
+                    </div>
+                </div>
+                <div class="mdl-dialog__actions">
+                    <button type="button" id="save-server-btn" class="mdl-button mdl-button--colored mdl-js-button mdl-js-ripple-effect">Save</button>
+                    <button type="button" id="close-dialog-btn" class="mdl-button close">Cancel</button>
+                </div>
+            </dialog>
+
+        </main>
+    </div>
+    <script src="options.js"></script>
+</body>
+</html>

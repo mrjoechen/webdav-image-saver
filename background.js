@@ -1,210 +1,429 @@
-// Global variable to store active timeouts for cancellation
-let pendingSends = {}; // key: some unique id, value: { timeoutId, profile, imageUrl, filename, tabId }
+// Store configurations in memory for quick access
+let webdavServers = [];
+let uploadTimers = {}; // Store notification IDs and their timeouts
 
-// --- Context Menu Management ---
-
-// Function to create context menus based on stored profiles
-function updateContextMenus() {
-  chrome.contextMenus.removeAll(() => { // Remove existing menus first
-    chrome.storage.local.get('webdavProfiles', (data) => {
-      const profiles = data.webdavProfiles || [];
-
-      if (profiles.length === 1) {
-        // If only one profile, create a single menu item
-        chrome.contextMenus.create({
-          id: `webdav-send-${profiles[0].id}`,
-          title: `Send Image to WebDAV (${profiles[0].name})`,
-          contexts: ["image"] // Show only when right-clicking an image
-        });
-      } else if (profiles.length > 1) {
-        // If multiple profiles, create a parent menu and submenus
-        chrome.contextMenus.create({
-          id: "webdav-send-parent",
-          title: "Send Image to WebDAV",
-          contexts: ["image"]
-        });
-        profiles.forEach(profile => {
-          chrome.contextMenus.create({
-            id: `webdav-send-${profile.id}`,
-            parentId: "webdav-send-parent",
-            title: profile.name,
-            contexts: ["image"]
-          });
-        });
-      }
-      // No menu if no profiles are configured
-    });
-  });
-}
-
-// Initial setup when the extension is installed or updated
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("WebDAV Image Saver installed/updated.");
-  updateContextMenus(); // Create menus on install/update
+// --- Initialization ---
+chrome.runtime.onInstalled.addListener(async () => {
+    console.log("WebDAV Image Saver installed/updated.");
+    await loadConfig();
+    createContextMenus();
 });
 
-// Listen for messages from options page to update menus
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "updateContextMenus") {
-    updateContextMenus();
-  }
-  if (request.action === "cancelSend") {
-      cancelScheduledSend(request.sendId);
-  }
-  // Keep the message channel open for asynchronous response if needed
-  // return true;
-});
+// --- Context Menu Click Handler ---
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    const serverConfig = webdavServers.find(s => s.id === info.menuItemId);
 
-// Handle context menu clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId.startsWith("webdav-send-")) {
-    const profileId = info.menuItemId.replace("webdav-send-", "");
-    const imageUrl = info.srcUrl; // URL of the right-clicked image
+    if (serverConfig && info.srcUrl && tab && tab.id) {
+        console.log(`Preparing image ${info.srcUrl} for ${serverConfig.name}`);
 
-    if (!imageUrl) {
-      console.error("Could not get image URL.");
-      return;
-    }
+        // 1. Generate a unique ID for this upload attempt
+        const uploadId = `upload_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
+        const countdownSeconds = 3;
 
-    // Retrieve the specific profile configuration
-    chrome.storage.local.get('webdavProfiles', (data) => {
-      const profiles = data.webdavProfiles || [];
-      const profile = profiles.find(p => p.id === profileId);
+        // 2. Inject Content Script and CSS if not already there (or just CSS)
+        try {
+            await chrome.scripting.insertCSS({
+                target: { tabId: tab.id },
+                files: ['assets/bubble.css']
+            });
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content_script.js']
+            });
+            console.log("Injected content script and CSS for tab:", tab.id);
 
-      if (profile) {
-        // Start the countdown process
-        scheduleSend(profile, imageUrl, tab.id);
-      } else {
-        console.error("Clicked profile configuration not found:", profileId);
-        // Optionally notify the user or open options page
-        chrome.notifications.create({
-           type: 'basic',
-           iconUrl: 'icon128.png',
-           title: 'WebDAV Error',
-           message: `Configuration for profile ID ${profileId} not found. Please check settings.`
-        });
-        chrome.runtime.openOptionsPage();
-      }
-    });
-  }
-});
+            // 3. Send message to Content Script to show the bubble
+            await chrome.tabs.sendMessage(tab.id, {
+                action: 'showCountdownBubble',
+                uploadId: uploadId,
+                serverName: serverConfig.name,
+                countdownSeconds: countdownSeconds
+            });
+            console.log("Sent showCountdownBubble message for ID:", uploadId);
 
-// --- Countdown and Sending Logic ---
+            // 4. Start the background timer for the actual upload
+            const timerId = setTimeout(() => {
+                console.log(`Background timer expired for ${uploadId}. Starting upload.`);
+                // Check if it wasn't cancelled in the meantime
+                if (uploadTimers[uploadId]) {
+                    const { serverConfig, imageUrl, pageUrl } = uploadTimers[uploadId];
+                    // Remove the timer *before* starting the upload
+                    delete uploadTimers[uploadId];
+                    // Tell content script to remove the countdown bubble explicitly
+                    chrome.tabs.sendMessage(tab.id, { action: 'removeCountdownBubble', uploadId: uploadId }).catch(e => console.warn("Failed to send remove message", e));
+                    // Perform the upload
+                    uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tab.id);
+                } else {
+                     console.log(`Upload ${uploadId} was cancelled before timer expired.`);
+                }
+            }, countdownSeconds * 1000);
 
-function scheduleSend(profile, imageUrl, tabId) {
-  const sendId = `send-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const countdownSeconds = 5;
+            // 5. Store timer details associated with the ID
+            uploadTimers[uploadId] = { timerId, serverConfig, imageUrl: info.srcUrl, pageUrl: info.pageUrl || tab.url }; // Use info.pageUrl if available, else tab.url
 
-  // Tell content script to show the timer
-  chrome.tabs.sendMessage(tabId, {
-      action: "showTimer",
-      sendId: sendId,
-      countdown: countdownSeconds
-  });
+        } catch (error) {
+            console.error(`Failed to inject script/CSS or send message to tab ${tab.id}:`, error);
+            // Fallback or error notification? For now, just log.
+            // Maybe show a generic error status bubble immediately if injection fails?
+            try {
+                 await chrome.tabs.sendMessage(tab.id, {
+                      action: 'showStatusBubble',
+                      uploadId: uploadId, // Still useful for potential removal
+                      status: 'error',
+                      message: `Error preparing upload: ${error.message}`
+                  });
+            } catch (sendError) {
+                 console.error("Also failed to send error status message:", sendError);
+            }
+        }
 
-  // Schedule the actual send operation
-  const timeoutId = setTimeout(() => {
-    // Check if it wasn't cancelled
-    if (pendingSends[sendId]) {
-      console.log(`Countdown finished for ${sendId}. Sending image: ${imageUrl} to profile: ${profile.name}`);
-      sendImageToWebDAV(profile, imageUrl, sendId, tabId);
-      // Clean up after starting the send
-      delete pendingSends[sendId];
-    }
-  }, countdownSeconds * 1000);
-
-  // Store timeout info for cancellation
-  pendingSends[sendId] = { timeoutId, profile, imageUrl, tabId };
-  console.log(`Scheduled send ${sendId} for image: ${imageUrl}`);
-}
-
-function cancelScheduledSend(sendId) {
-    if (pendingSends[sendId]) {
-        clearTimeout(pendingSends[sendId].timeoutId);
-        console.log(`Cancelled send ${sendId}`);
-        // Tell content script to hide the timer immediately
-        chrome.tabs.sendMessage(pendingSends[sendId].tabId, { action: "hideTimer", sendId: sendId, cancelled: true });
-        delete pendingSends[sendId]; // Remove from pending list
     } else {
-        console.log(`Send ID ${sendId} not found or already processed.`);
+        // Handle cases where config/URL/tab is missing
+        console.warn("Context menu click ignored:", { hasConfig: !!serverConfig, hasSrcUrl: !!info.srcUrl, hasTabId: !!(tab && tab.id) });
+    }
+});
+
+
+// --- Listen for Cancellation from Content Script ---
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Make sure to handle other messages too (like testWebdav, configUpdated)
+    if (message.action === 'cancelUpload') {
+        const uploadId = message.uploadId;
+        console.log(`Received cancel request for upload ID: ${uploadId}`);
+        if (uploadTimers[uploadId]) {
+            clearTimeout(uploadTimers[uploadId].timerId);
+            delete uploadTimers[uploadId];
+            console.log(`Cancelled timer and removed tracking for ${uploadId}`);
+            // No need to tell content script to remove bubble, it already did.
+            // Optionally show a cancellation status bubble:
+            if (sender.tab && sender.tab.id) {
+                chrome.tabs.sendMessage(sender.tab.id, {
+                   action: 'showStatusBubble',
+                   uploadId: uploadId, // ID for context, though bubble is gone
+                   status: 'error', // Or maybe a neutral 'info' status? Let's use error styling.
+                   message: 'Upload cancelled.'
+                }).catch(e => console.warn("Failed to send cancel status message", e));
+            }
+        } else {
+            console.log(`Received cancel for ${uploadId}, but it was not found (already finished or cancelled).`);
+        }
+        return false; // Indicate sync processing
+    }
+    // --- Keep other message handlers ---
+    else if (message.action === 'testWebdav') {
+         testWebdavConnection(message.config)
+            .then(result => sendResponse(result))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true; // Async response
+    } else if (message.action === 'configUpdated') {
+        console.log('Configuration updated, reloading...');
+        loadConfig().then(() => {
+             createContextMenus();
+              // Reset any pending timers? Maybe not necessary, let them run with old config? Or clear uploadTimers = {}; ?
+             console.log("Menus updated after config change.");
+        });
+        return false; // Sync processing
+    }
+     return false; // Default for unhandled messages
+});
+
+
+// --- Configuration Loading ---
+async function loadConfig() {
+    try {
+        const data = await chrome.storage.sync.get('webdavServers');
+        webdavServers = data.webdavServers || [];
+        console.log("Configuration loaded:", webdavServers);
+    } catch (error) {
+        console.error("Error loading configuration:", error);
+        webdavServers = [];
     }
 }
 
+// --- Context Menu Setup ---
+function createContextMenus() {
+    // Remove existing menus first to avoid duplicates on update
+    chrome.contextMenus.removeAll(() => {
+        if (chrome.runtime.lastError) {
+            console.warn("Error removing context menus:", chrome.runtime.lastError.message);
+        }
 
-// --- WebDAV Communication ---
+        // Create a parent menu item
+        chrome.contextMenus.create({
+            id: "webdavSaverParent",
+            title: "Save Image to WebDAV",
+            contexts: ["image"] // Show only when right-clicking an image
+        }, () => {
+            if (chrome.runtime.lastError) console.error("Error creating parent menu:", chrome.runtime.lastError.message);
+        });
 
-async function sendImageToWebDAV(profile, imageUrl, sendId, tabId) {
-  try {
-    // 1. Fetch the image data
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-    }
-    const imageBlob = await response.blob();
-    const contentType = response.headers.get('content-type') || 'application/octet-stream'; // Get content type or default
-
-    // 2. Determine filename
-    let filename = imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
-    // Clean filename (remove query parameters, decode URI components)
-    filename = decodeURIComponent(filename.split('?')[0]);
-    // Handle cases with no filename in URL (generate one)
-     if (!filename || filename.indexOf('.') === -1) {
-        const extension = contentType.split('/')[1] || 'jpg'; // Guess extension from MIME type
-        filename = `image_${Date.now()}.${extension}`;
-     }
-
-    // 3. Construct WebDAV URL
-    // Ensure profile URL ends with /
-    const baseDavUrl = profile.url.endsWith('/') ? profile.url : profile.url + '/';
-    // Ensure profile path starts and ends with / (unless it's just "/")
-    let targetPath = profile.path || '/';
-    if (targetPath !== '/' && !targetPath.startsWith('/')) targetPath = '/' + targetPath;
-    if (targetPath !== '/' && !targetPath.endsWith('/')) targetPath = targetPath + '/';
-    // Remove leading slash from path if base URL already includes it (common mistake)
-    if (targetPath.startsWith('/') && baseDavUrl.endsWith('/')) {
-        targetPath = targetPath.substring(1);
-    }
-    // Ensure filename is properly encoded for URL, but keep slashes in path
-    const fullWebDavUrl = baseDavUrl + targetPath + encodeURIComponent(filename);
-
-
-    console.log(`Attempting PUT to: ${fullWebDavUrl}`);
-
-    // 4. Prepare Basic Authentication header
-    const credentials = btoa(`${profile.username}:${profile.password}`); // Base64 encode "username:password"
-
-    // 5. Send PUT request
-    const putResponse = await fetch(fullWebDavUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': contentType
-      },
-      body: imageBlob
+        // Create sub-menu items for each configured server
+        if (webdavServers && webdavServers.length > 0) {
+            webdavServers.forEach(server => {
+                chrome.contextMenus.create({
+                    id: server.id, // Use unique server ID for the menu item ID
+                    parentId: "webdavSaverParent",
+                    title: `Send to: ${server.name} (${server.folder})`,
+                    contexts: ["image"]
+                }, () => {
+                     if (chrome.runtime.lastError) console.error(`Error creating menu for ${server.name}:`, chrome.runtime.lastError.message);
+                });
+            });
+        } else {
+            // Add a placeholder if no servers are configured
+             chrome.contextMenus.create({
+                id: "noConfig",
+                parentId: "webdavSaverParent",
+                title: "No servers configured...",
+                contexts: ["image"],
+                enabled: false // Disable it
+            });
+        }
     });
 
-    // 6. Handle response
-    if (putResponse.ok) {
-      console.log(`Image successfully uploaded to ${profile.name}: ${filename}`);
-      // Notify content script of success (optional: show success message)
-       chrome.tabs.sendMessage(tabId, { action: "uploadStatus", sendId: sendId, success: true, message: `Image '${filename}' saved to ${profile.name}.` });
-    } else {
-       const errorText = await putResponse.text();
-       console.error(`WebDAV PUT failed: ${putResponse.status} ${putResponse.statusText}`, errorText);
-       throw new Error(`WebDAV Error ${putResponse.status}: ${putResponse.statusText}. Server Response: ${errorText}`);
-    }
-
-  } catch (error) {
-    console.error("Error sending image to WebDAV:", error);
-    // Notify content script of failure (optional: show error message)
-    chrome.tabs.sendMessage(tabId, { action: "uploadStatus", sendId: sendId, success: false, message: `Failed to save image: ${error.message}` });
-  } finally {
-      // Ensure timer is hidden even if send fails after countdown finishes
-      chrome.tabs.sendMessage(tabId, { action: "hideTimer", sendId: sendId, cancelled: false });
-  }
 }
 
-// --- Utility: Open Options Page on Icon Click ---
-chrome.action.onClicked.addListener((tab) => {
-  chrome.runtime.openOptionsPage();
-});
+
+// --- Image Upload Logic ---
+async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId) {
+    let success = false;
+    let statusMessage = '';
+    let filename = ''; // Keep filename accessible
+
+    try {
+        // 1. Generate Filename
+        filename = generateFilename(imageUrl, pageUrl); // Keep using original function
+        if (!filename) throw new Error("Could not generate filename.");
+
+        // 2. Fetch Image Data (as before)
+        console.log(`[${uploadId}] Fetching image: ${imageUrl}`);
+        const response = await fetch(imageUrl);
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        const imageBlob = await response.blob();
+        console.log(`[${uploadId}] Image fetched: ${imageBlob.size} bytes, type: ${imageBlob.type}`);
+
+        // 3. Construct WebDAV URL (as before)
+        let folderPath = serverConfig.folder.endsWith('/') && serverConfig.folder.length > 1 ? serverConfig.folder.slice(0, -1) : serverConfig.folder;
+        let baseUrl = serverConfig.url.endsWith('/') ? serverConfig.url.slice(0, -1) : serverConfig.url;
+        const targetUrl = `${baseUrl}${folderPath}/${filename}`;
+        console.log(`[${uploadId}] Target WebDAV URL: ${targetUrl}`);
+
+        // 4. Prepare Headers (as before)
+        const headers = new Headers();
+        headers.append('Authorization', 'Basic ' + btoa(`${serverConfig.username}:${serverConfig.password}`));
+        headers.append('Content-Type', imageBlob.type || 'application/octet-stream');
+
+        // 5. Perform PUT request (as before)
+        console.log(`[${uploadId}] Sending PUT request...`);
+        const putResponse = await fetch(targetUrl, { method: 'PUT', headers: headers, body: imageBlob });
+        console.log(`[${uploadId}] WebDAV response status: ${putResponse.status}`);
+
+        // 6. Check Response (as before, maybe refine error parsing)
+        if (putResponse.ok || putResponse.status === 201 || putResponse.status === 204) {
+            console.log(`[${uploadId}] Image uploaded successfully!`);
+            success = true;
+            statusMessage = `Saved as "${filename}"`; // Shorter success message for bubble
+        } else {
+             let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
+             try {
+                 const errorText = await putResponse.text();
+                 console.error(`[${uploadId}] WebDAV Error Response Body:`, errorText);
+                  const match = errorText.match(/<[ds]:message[^>]*>([^<]+)<\/[ds]:message>/i);
+                  if (match && match[1]) { errorDetails += ` - ${match[1].trim()}`; }
+                  else if (errorText.length < 100 && errorText.length > 0) { errorDetails += ` - ${errorText}`; }
+             } catch (e) { /* Ignore body read errors */ }
+             throw new Error(`Upload failed: ${errorDetails}`);
+        }
+
+    } catch (error) {
+        console.error(`[${uploadId}] Upload process failed:`, error);
+        success = false;
+        statusMessage = `Failed: ${error.message}`;
+    }
+
+    // 7. Send result message back to content script
+    // In background.js, add more verbose logging
+    chrome.tabs.sendMessage(tabId, {
+        action: 'showStatusBubble',
+        uploadId: uploadId,
+        status: success ? 'success' : 'error',
+        message: statusMessage
+    }).then(() => {
+        console.log(`[${uploadId}] Successfully sent status message to tab ${tabId}`);
+    }).catch(e => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, e));
+    }
+
+// --- Filename Generation ---
+function generateFilename(imageUrl, pageUrl) {
+    try {
+        const url = new URL(imageUrl);
+        const page = new URL(pageUrl); // Use pageUrl for hostname
+
+        // Get file extension
+        const pathname = url.pathname;
+        const lastDot = pathname.lastIndexOf('.');
+        const extension = (lastDot > -1) ? pathname.substring(lastDot + 1).toLowerCase() : 'jpg'; // Default to jpg if no extension
+
+        // Get date timestamp YYYYMMDDHHMMSS
+        const now = new Date();
+        const timestamp = now.getFullYear().toString() +
+                          (now.getMonth() + 1).toString().padStart(2, '0') +
+                          now.getDate().toString().padStart(2, '0') +
+                          now.getHours().toString().padStart(2, '0') +
+                          now.getMinutes().toString().padStart(2, '0') +
+                          now.getSeconds().toString().padStart(2, '0');
+
+        // Get hostname and replace dots with underscores
+        const hostname = page.hostname.replace(/\./g, '_');
+
+        return `image_${timestamp}_${hostname}.${extension}`;
+    } catch (e) {
+        console.error("Error generating filename:", e);
+        // Fallback filename
+        const timestamp = Date.now();
+        const fallbackExt = imageUrl.split('.').pop() || 'jpg';
+         return `image_${timestamp}_fallback.${fallbackExt}`;
+    }
+}
+
+// --- Show Upload Result Notification ---
+function showUploadResultNotification(serverName, success, message) {
+    chrome.notifications.create({
+        type: 'basic',
+        iconUrl: success ? 'icons/icon128.png' : 'icons/icon_error.png', // You might need an error icon
+        title: success ? 'Upload Successful' : 'Upload Failed',
+        message: success ? `Image saved as "${message}" to "${serverName}"` : `Failed to save to "${serverName}": ${message}`,
+        priority: success ? 0 : 1
+    });
+}
+
+
+// --- WebDAV Connection Test Logic (Using Regex) ---
+async function testWebdavConnection(config) {
+    console.log("Testing connection to:", config.url);
+    const headers = new Headers();
+    headers.append('Authorization', 'Basic ' + btoa(`${config.username}:${config.password}`));
+    headers.append('Depth', '1'); // Request listing of immediate children
+
+    let testUrl = config.url;
+    // Ensure URL ends with a slash for PROPFIND on a collection
+    if (!testUrl.endsWith('/')) {
+        testUrl += '/';
+    }
+
+    try {
+        const response = await fetch(testUrl, {
+            method: 'PROPFIND',
+            headers: headers,
+            // Add body for PROPFIND if required by your server (often empty or specific XML)
+            // body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>' // Example body
+        });
+
+        console.log(`PROPFIND response status: ${response.status}`);
+
+        // 207 Multi-Status is the expected success code for PROPFIND
+        if (response.status === 207) {
+            const responseText = await response.text();
+            const folders = [];
+
+            // Regex to find content within <href>...</href> or <D:href>...</D:href> tags
+            // This is a simplified regex, might need adjustments based on actual server response
+            const hrefRegex = /<(?:\w+:)?href[^>]*>([^<]+)<\/(?:\w+:)?href>/gi;
+            let match;
+
+            while ((match = hrefRegex.exec(responseText)) !== null) {
+                try {
+                    const rawHref = match[1].trim(); // Content like /remote.php/dav/files/user/Documents/
+
+                    // We only want directories, identified by ending with a slash
+                    if (rawHref && rawHref.endsWith('/')) {
+                        let path = decodeURIComponent(rawHref); // Decode URL encoding like %20
+
+                        // --- Path Normalization (Crucial) ---
+                        // We need to make the path relative to the *base* WebDAV folder specified in config.url
+                        let baseUrlPath = '/'; // Default assumption (root)
+                        try {
+                             // Parse the configured URL to get its path component
+                             const configUrl = new URL(config.url);
+                             if (configUrl.pathname && configUrl.pathname !== '/') {
+                                 baseUrlPath = configUrl.pathname;
+                                 // Ensure the base path ends with a slash for proper comparison/stripping
+                                 if (!baseUrlPath.endsWith('/')) {
+                                     // Handle case where config URL might be '.../files/user' vs '.../files/user/'
+                                      // We want the directory containing the target, so add / or go up one level
+                                     const lastSlash = baseUrlPath.lastIndexOf('/');
+                                     if(lastSlash > 0) { // Check if not like '/file'
+                                          baseUrlPath = baseUrlPath.substring(0, lastSlash + 1);
+                                     } else {
+                                         baseUrlPath = '/'; // Fallback to root if structure is unexpected
+                                     }
+                                 }
+                             }
+                        } catch(e) {
+                            console.warn("Could not parse config URL for base path, assuming root.", e);
+                        }
+
+
+                        // If the found path starts with the base path, remove the base path part
+                        // Need case-insensitive comparison? Maybe not for paths.
+                        if (path.startsWith(baseUrlPath)) {
+                            path = path.substring(baseUrlPath.length);
+                        }
+
+                        // --- Clean up the relative path ---
+                        // Remove leading slash if present (we'll add it back consistently)
+                        if (path.startsWith('/')) {
+                             path = path.substring(1);
+                        }
+                        // Remove trailing slash (it's guaranteed by the check above, unless it was only "/")
+                        if (path.endsWith('/') && path.length > 0) {
+                            path = path.slice(0, -1);
+                        }
+
+                        // Add the leading slash for representation in the dropdown, skip empty root path ('')
+                        if (path !== '') {
+                            folders.push('/' + path);
+                        }
+                    }
+                } catch (e) {
+                    // Handle potential errors during decoding or processing a single href
+                    console.warn(`Skipping href due to processing error: ${match ? match[1] : 'N/A'}`, e);
+                }
+            }
+
+            console.log("Found folders via regex:", folders);
+            // Add root folder explicitly and ensure uniqueness
+            const uniqueFolders = ['/', ...new Set(folders)];
+            // Sort folders alphabetically after root? Optional.
+            // uniqueFolders.sort((a, b) => {
+            //    if (a === '/') return -1;
+            //    if (b === '/') return 1;
+            //    return a.localeCompare(b);
+            // });
+
+            return { success: true, folders: uniqueFolders };
+
+        } else if (response.status === 401) {
+            throw new Error('Authentication failed (Unauthorized). Check username/password.');
+        } else if (response.status === 404) {
+             throw new Error('URL Not Found (404). Check the WebDAV URL path.');
+        } else {
+             // Try reading the body for more info on other errors
+             let errorDetails = `Unexpected status code: ${response.status} ${response.statusText}`;
+             try {
+                 const errorText = await response.text();
+                  if(errorText) errorDetails += ` - ${errorText.substring(0, 200)}`; // Show beginning of error body
+             } catch(e) { /* ignore */}
+             throw new Error(errorDetails);
+        }
+    } catch (error) {
+        console.error("WebDAV connection test failed:", error);
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            return { success: false, error: `Network error: Could not reach the server at ${config.url}. Check URL, network, and CORS settings if applicable.` };
+        }
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Initial load and menu creation on startup ---
+loadConfig().then(createContextMenus);

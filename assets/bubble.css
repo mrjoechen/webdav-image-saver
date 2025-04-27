@@ -1,0 +1,124 @@
+/* bubble.css */
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateY(-20px); }
+    10% { opacity: 1; transform: translateY(0); }
+    90% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-20px); }
+  }
+  
+  @keyframes countdownFadeIn {
+     0% { opacity: 0; transform: translateY(-20px); }
+     100% { opacity: 1; transform: translateY(0); }
+  }
+  
+  
+  .webdav-saver-bubble {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 999999; /* High z-index */
+    background-color: rgba(40, 40, 40, 0.9);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    opacity: 0; /* Start hidden */
+    /* Apply fade in animation */
+    animation: countdownFadeIn 0.5s ease-out forwards;
+  }
+  
+  .webdav-saver-bubble p {
+    margin: 0;
+    line-height: 1.4;
+  }
+  
+  .webdav-saver-bubble .countdown-timer {
+      font-weight: bold;
+      min-width: 15px; /* Prevent layout shift */
+      display: inline-block;
+      text-align: center;
+  }
+  
+  .webdav-saver-bubble button.cancel-button {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
+  
+  .webdav-saver-bubble button.cancel-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.8);
+  }
+  
+  .webdav-saver-bubble button.cancel-button:active {
+      background-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  /* Styles for the final status bubble */
+  .webdav-saver-status-bubble {
+     /* Inherit most styles from countdown bubble */
+     position: fixed;
+     top: 20px;
+     right: 20px;
+     z-index: 999999;
+     background-color: rgba(40, 40, 40, 0.9);
+     color: white;
+     padding: 12px 20px;
+     border-radius: 8px;
+     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+     font-size: 14px;
+     opacity: 0;
+     /* Apply fade in/out animation */
+     animation: fadeInOut 4s ease-in-out forwards; /* Show for ~3.6s */
+  }
+  
+  .webdav-saver-status-bubble.success {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999999; /* High z-index */
+      background-color: rgba(40, 167, 69, 0.9); /* Green */
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      opacity: 0; /* Start hidden */
+      /* Apply fade in animation */
+      animation: countdownFadeIn 0.5s ease-out forwards;
+  }
+  
+  .webdav-saver-status-bubble.error {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999999; /* High z-index */
+      background-color: rgba(220, 53, 69, 0.9); /* Red */
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      opacity: 0; /* Start hidden */
+      /* Apply fade in animation */
+      animation: countdownFadeIn 0.5s ease-out forwards;
+  }

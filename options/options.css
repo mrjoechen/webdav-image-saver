@@ -1,0 +1,10 @@
+/* Basic Reset or Normalize */
+body { margin: 0; font-family: 'Roboto', sans-serif; }
+
+/* Add custom styles or override MDL styles if needed */
+.mdl-dialog { width: 80%; max-width: 500px; }
+.mdl-textfield { width: 100%; }
+#server-list .mdl-card { margin: 8px; min-height: 150px; } /* Example card style */
+#folder-selection select, #folder-selection input { width: 100%; box-sizing: border-box; margin-top: 5px; }
+#connection-status.success { color: green; }
+#connection-status.error { color: red; }
