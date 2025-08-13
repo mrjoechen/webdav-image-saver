@@ -125,51 +125,19 @@
                     <div id="connection-status" class="connection-status"></div>
                 </div>
 
-                <!-- Folder Selection (shown after successful connection test) -->
+                <!-- Target Folder Path -->
                 <div id="folder-selection" class="form-group hidden">
-                    <label for="server-folder">Target Folder</label>
-                    
-                    <!-- Current Path Display -->
-                    <div class="folder-breadcrumb">
-                        <span class="material-icons-outlined">folder</span>
-                        <span id="current-path">/</span>
-                    </div>
-                    
-                    <!-- Folder Navigation -->
-                    <div class="folder-browser">
-                        <div class="folder-nav-header">
-                            <button type="button" id="folder-back-btn" class="btn btn-sm btn-secondary" disabled>
-                                <span class="material-icons-outlined">arrow_back</span>
-                                Back
-                            </button>
-                            <button type="button" id="folder-refresh-btn" class="btn btn-sm btn-secondary">
-                                <span class="material-icons-outlined">refresh</span>
-                                Refresh
-                            </button>
-                        </div>
-                        
-                        <div class="folder-list" id="folder-list">
-                            <!-- Folders will be populated here -->
-                        </div>
-                        
-                        <div class="folder-actions">
-                            <button type="button" id="select-current-folder-btn" class="btn btn-primary">
-                                <span class="material-icons-outlined">check</span>
-                                Select Current Folder
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="form-helper">
-                        <span class="material-icons-outlined">info</span>
-                        <span>Or specify a custom folder path:</span>
-                    </div>
+                    <label for="custom-folder-path">Target Folder Path</label>
                     <input 
                         type="text" 
                         id="custom-folder-path" 
                         class="form-input" 
                         placeholder="/MyImages"
                     >
+                    <div class="form-helper">
+                        <span class="material-icons-outlined">info</span>
+                        <span>Specify the folder path on the WebDAV server where images will be saved</span>
+                    </div>
                 </div>
             </form>
 

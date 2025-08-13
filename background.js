@@ -20,17 +20,30 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         const uploadId = `upload_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
         const countdownSeconds = 3;
 
-        // 2. Inject Content Script and CSS if not already there (or just CSS)
+        // 2. Inject Content Script and CSS if not already there
         try {
-            await chrome.scripting.insertCSS({
-                target: { tabId: tab.id },
-                files: ['assets/bubble.css']
-            });
-            await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                files: ['content_script.js']
-            });
-            console.log("Injected content script and CSS for tab:", tab.id);
+            // Check if content script is already injected by trying to send a ping message
+            let scriptAlreadyInjected = false;
+            try {
+                await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+                scriptAlreadyInjected = true;
+                console.log("Content script already injected for tab:", tab.id);
+            } catch (e) {
+                console.log("Content script not present, will inject for tab:", tab.id);
+            }
+
+            // Only inject if not already present
+            if (!scriptAlreadyInjected) {
+                await chrome.scripting.insertCSS({
+                    target: { tabId: tab.id },
+                    files: ['assets/bubble.css']
+                });
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['content_script.js']
+                });
+                console.log("Injected content script and CSS for tab:", tab.id);
+            }
 
             // 3. Send message to Content Script to show the bubble
             await chrome.tabs.sendMessage(tab.id, {

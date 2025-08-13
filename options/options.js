@@ -15,11 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     testConnectionBtn: document.getElementById('test-connection-btn'),
     connectionStatus: document.getElementById('connection-status'),
     folderSelection: document.getElementById('folder-selection'),
-    currentPath: document.getElementById('current-path'),
-    folderBackBtn: document.getElementById('folder-back-btn'),
-    folderRefreshBtn: document.getElementById('folder-refresh-btn'),
-    folderList: document.getElementById('folder-list'),
-    selectCurrentFolderBtn: document.getElementById('select-current-folder-btn'),
     customFolderPath: document.getElementById('custom-folder-path'),
     notification: document.getElementById('notification')
   };
@@ -33,12 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
     serverPassword: document.getElementById('server-password')
   };
 
-  // Folder browser state
-  let folderBrowserState = {
-    currentPath: '/',
-    pathHistory: ['/'],
-    folders: []
-  };
 
   // Initialize the app
   init();
@@ -66,10 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Connection test
     elements.testConnectionBtn?.addEventListener('click', testConnection);
 
-    // Folder browser controls
-    elements.folderBackBtn?.addEventListener('click', goBackFolder);
-    elements.folderRefreshBtn?.addEventListener('click', refreshFolderList);
-    elements.selectCurrentFolderBtn?.addEventListener('click', selectCurrentFolder);
 
     // ESC key to close modal
     document.addEventListener('keydown', (e) => {
@@ -109,8 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.folderSelection?.classList.add('hidden');
     elements.customFolderPath.value = '';
     
-    // Reset folder browser state
-    resetFolderBrowser();
   }
 
   async function handleFormSubmit(e) {
@@ -143,8 +126,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const username = inputs.serverUsername.value.trim();
     const password = inputs.serverPassword.value;
     
-    // Get folder path from custom input or current browser path
-    let targetFolder = elements.customFolderPath.value.trim() || folderBrowserState.currentPath;
+    // Get folder path from custom input
+    let targetFolder = elements.customFolderPath.value.trim() || '/';
     
     // Normalize folder path
     if (!targetFolder.startsWith('/')) targetFolder = '/' + targetFolder;
@@ -226,8 +209,6 @@ document.addEventListener('DOMContentLoaded', () => {
       showConnectionStatus('Testing connection...', 'loading');
       elements.folderSelection?.classList.add('hidden');
 
-      // Reset folder browser state
-      resetFolderBrowser();
 
       const response = await chrome.runtime.sendMessage({
         action: 'testWebdav',
@@ -239,11 +220,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response?.success) {
         showConnectionStatus('✓ Connection successful!', 'success');
         elements.folderSelection?.classList.remove('hidden');
-        
-        // Initialize folder browser with root folder
-        folderBrowserState.folders = response.folders || [];
-        resetFolderBrowser();
-        renderFolderList();
       } else {
         showConnectionStatus(`✗ Connection failed: ${response?.error || 'Unknown error'}`, 'error');
         elements.folderSelection?.classList.add('hidden');
@@ -383,13 +359,9 @@ document.addEventListener('DOMContentLoaded', () => {
       inputs.serverUsername.value = server.username;
       inputs.serverPassword.value = server.password;
       
-      // Set the folder path in custom input and browser state
+      // Set the folder path in custom input
       const serverFolder = server.folder || '/';
       elements.customFolderPath.value = serverFolder;
-      
-      // Update folder browser state to show the selected path
-      folderBrowserState.currentPath = serverFolder;
-      updateFolderUI();
       
       // Show folder selection if we have the info
       if (server.folder) {
@@ -465,155 +437,4 @@ document.addEventListener('DOMContentLoaded', () => {
     return div.innerHTML;
   }
 
-  // === Folder Browser Functions ===
-
-  function resetFolderBrowser() {
-    folderBrowserState.currentPath = '/';
-    folderBrowserState.pathHistory = ['/'];
-    updateFolderUI();
-  }
-
-  function updateFolderUI() {
-    if (elements.currentPath) {
-      elements.currentPath.textContent = folderBrowserState.currentPath;
-    }
-    if (elements.folderBackBtn) {
-      elements.folderBackBtn.disabled = folderBrowserState.pathHistory.length <= 1;
-    }
-  }
-
-  function renderFolderList() {
-    if (!elements.folderList) return;
-    
-    elements.folderList.innerHTML = '';
-    
-    // Get folders for current path
-    const currentFolders = getCurrentPathFolders();
-    
-    if (currentFolders.length === 0) {
-      const emptyState = document.createElement('div');
-      emptyState.className = 'folder-list-empty';
-      emptyState.innerHTML = `
-        <span class="material-icons-outlined">folder_open</span>
-        <span>No subfolders found</span>
-      `;
-      elements.folderList.appendChild(emptyState);
-      return;
-    }
-
-    currentFolders.forEach(folder => {
-      const folderItem = document.createElement('div');
-      folderItem.className = 'folder-item';
-      folderItem.innerHTML = `
-        <span class="material-icons-outlined">folder</span>
-        <span class="folder-item-name">${escapeHTML(folder.name)}</span>
-      `;
-      
-      folderItem.addEventListener('click', () => {
-        navigateToFolder(folder.path);
-      });
-      
-      elements.folderList.appendChild(folderItem);
-    });
-  }
-
-  function getCurrentPathFolders() {
-    const currentPath = folderBrowserState.currentPath;
-    const folders = [];
-    
-    folderBrowserState.folders.forEach(folderPath => {
-      // Normalize folder path
-      let normalizedPath = folderPath.startsWith('/') ? folderPath : '/' + folderPath;
-      if (normalizedPath.endsWith('/') && normalizedPath.length > 1) {
-        normalizedPath = normalizedPath.slice(0, -1);
-      }
-      
-      // Check if this folder is a direct child of current path
-      if (normalizedPath.startsWith(currentPath)) {
-        const relativePath = normalizedPath.substring(currentPath.length);
-        const pathParts = relativePath.split('/').filter(part => part.length > 0);
-        
-        if (pathParts.length === 1) {
-          // Direct child folder
-          folders.push({
-            name: pathParts[0],
-            path: currentPath === '/' ? '/' + pathParts[0] : currentPath + '/' + pathParts[0]
-          });
-        }
-      }
-    });
-    
-    // Remove duplicates
-    const uniqueFolders = [];
-    const seen = new Set();
-    folders.forEach(folder => {
-      if (!seen.has(folder.path)) {
-        seen.add(folder.path);
-        uniqueFolders.push(folder);
-      }
-    });
-    
-    return uniqueFolders.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  function navigateToFolder(path) {
-    folderBrowserState.pathHistory.push(folderBrowserState.currentPath);
-    folderBrowserState.currentPath = path;
-    updateFolderUI();
-    
-    // Request folder contents for this path
-    refreshFolderList();
-  }
-
-  function goBackFolder() {
-    if (folderBrowserState.pathHistory.length > 1) {
-      folderBrowserState.pathHistory.pop(); // Remove current
-      folderBrowserState.currentPath = folderBrowserState.pathHistory[folderBrowserState.pathHistory.length - 1];
-      updateFolderUI();
-      renderFolderList();
-    }
-  }
-
-  async function refreshFolderList() {
-    const url = inputs.serverUrl.value.trim();
-    const username = inputs.serverUsername.value.trim();
-    const password = inputs.serverPassword.value;
-
-    if (!url || !username) {
-      showNotification('URL and Username are required.', 'error');
-      return;
-    }
-
-    try {
-      if (elements.folderRefreshBtn) {
-        elements.folderRefreshBtn.disabled = true;
-        elements.folderRefreshBtn.innerHTML = '<span class="loading">Loading...</span>';
-      }
-      
-      const response = await chrome.runtime.sendMessage({
-        action: 'testWebdav',
-        config: { url, username, password, path: folderBrowserState.currentPath }
-      });
-
-      if (response?.success) {
-        folderBrowserState.folders = response.folders || [];
-        renderFolderList();
-      } else {
-        showNotification('Failed to load folder contents', 'error');
-      }
-    } catch (error) {
-      console.error('Error refreshing folder list:', error);
-      showNotification('Failed to refresh folder list', 'error');
-    } finally {
-      if (elements.folderRefreshBtn) {
-        elements.folderRefreshBtn.disabled = false;
-        elements.folderRefreshBtn.innerHTML = '<span class="material-icons-outlined">refresh</span>Refresh';
-      }
-    }
-  }
-
-  function selectCurrentFolder() {
-    elements.customFolderPath.value = folderBrowserState.currentPath;
-    showNotification(`Selected folder: ${folderBrowserState.currentPath}`, 'success');
-  }
 });

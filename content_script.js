@@ -81,7 +81,11 @@
     // Listen for messages from the background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('Content script received message:', message);
-      if (message.action === 'showCountdownBubble') {
+      if (message.action === 'ping') {
+        // Respond to ping to indicate script is present
+        sendResponse({ pong: true });
+        return true;
+      } else if (message.action === 'showCountdownBubble') {
         showCountdownBubble(message.uploadId, message.serverName, message.countdownSeconds);
       } else if (message.action === 'removeCountdownBubble') {
         removeBubble(message.uploadId);
