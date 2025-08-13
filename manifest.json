@@ -1,15 +1,18 @@
 {
     "manifest_version": 3,
     "name": "WebDAV Image Saver",
-    "version": "1.0",
-    "description": "Right-click to save images to your WebDAV server.",
+    "version": "1.0.0",
+    "description": "Save web images directly to your WebDAV server with a simple right-click. Supports multiple server configurations with secure credential storage.",
+    "author": "WebDAV Image Saver Team",
+    "homepage_url": "https://github.com/your-username/webdav-image-saver",
     "permissions": [
       "contextMenus",
       "storage",
       "scripting" 
       ],
     "host_permissions": [
-      "<all_urls>"
+      "https://*/*",
+      "http://localhost/*"
     ],
     "background": {
       "service_worker": "background.js"
@@ -27,10 +30,13 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'; frame-ancestors 'none';"
+    },
     "web_accessible_resources": [
         {
-        "resources": [ "assets/*", "bubble.css" ],
-        "matches": [ "<all_urls>" ]
+        "resources": [ "assets/*" ],
+        "matches": [ "https://*/*", "http://localhost/*" ]
         }
     ]
   }

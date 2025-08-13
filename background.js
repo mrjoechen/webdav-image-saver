@@ -131,9 +131,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // --- Configuration Loading ---
 async function loadConfig() {
     try {
-        const data = await chrome.storage.sync.get('webdavServers');
-        webdavServers = data.webdavServers || [];
-        console.log("Configuration loaded:", webdavServers);
+        // Check local storage first (new secure storage), fallback to sync for migration
+        const localData = await chrome.storage.local.get('webdavServers');
+        const syncData = await chrome.storage.sync.get('webdavServers');
+        
+        webdavServers = localData.webdavServers || syncData.webdavServers || [];
+        console.log("Configuration loaded:", webdavServers.length, "servers");
+        
+        // Migrate from sync to local if needed
+        if (syncData.webdavServers && !localData.webdavServers) {
+            console.log('Migrating server data to local storage for better security');
+            await chrome.storage.local.set({ webdavServers: webdavServers });
+        }
     } catch (error) {
         console.error("Error loading configuration:", error);
         webdavServers = [];
@@ -312,11 +321,16 @@ async function testWebdavConnection(config) {
     }
 
     try {
+        // Add CORS-friendly headers for browser extension
+        headers.append('Content-Type', 'application/xml; charset=utf-8');
+        
         const response = await fetch(testUrl, {
             method: 'PROPFIND',
             headers: headers,
-            // Add body for PROPFIND if required by your server (often empty or specific XML)
-            // body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>' // Example body
+            mode: 'cors',
+            credentials: 'omit',
+            // Add minimal PROPFIND body to avoid some server issues
+            body: '<?xml version="1.0" encoding="utf-8"?>\n<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>'
         });
 
         console.log(`PROPFIND response status: ${response.status}`);
@@ -417,11 +431,55 @@ async function testWebdavConnection(config) {
              throw new Error(errorDetails);
         }
     } catch (error) {
-        console.error("WebDAV connection test failed:", error);
-        if (error instanceof TypeError && error.message.includes('fetch')) {
-            return { success: false, error: `Network error: Could not reach the server at ${config.url}. Check URL, network, and CORS settings if applicable.` };
+        console.error("WebDAV PROPFIND test failed:", error);
+        
+        // Fallback: Try simpler HEAD request if PROPFIND fails
+        try {
+            console.log("Attempting fallback HEAD request...");
+            const fallbackHeaders = new Headers();
+            fallbackHeaders.append('Authorization', 'Basic ' + btoa(`${config.username}:${config.password}`));
+            
+            const headResponse = await fetch(testUrl, {
+                method: 'HEAD',
+                headers: fallbackHeaders,
+                mode: 'cors',
+                credentials: 'omit'
+            });
+            
+            if (headResponse.ok || headResponse.status === 404) {
+                // 404 is acceptable for HEAD on a collection, means auth worked
+                console.log("Fallback HEAD request successful");
+                return { 
+                    success: true, 
+                    folders: ['/'], // Return root folder only for fallback
+                    message: 'Connection test passed (limited folder browsing)'
+                };
+            } else if (headResponse.status === 401) {
+                return { success: false, error: 'Authentication failed. Check username and password.' };
+            } else {
+                return { success: false, error: `Server error: ${headResponse.status} ${headResponse.statusText}` };
+            }
+        } catch (fallbackError) {
+            console.error("Fallback HEAD request also failed:", fallbackError);
+            
+            // Check if it's a CORS/network error specifically
+            if (fallbackError instanceof TypeError && fallbackError.message.includes('fetch')) {
+                return { 
+                    success: false, 
+                    error: `🚫 CORS/Network Error: Cannot connect to ${config.url}
+                    
+Possible solutions:
+• Configure CORS on your WebDAV server
+• Use HTTPS instead of HTTP  
+• Check if server allows browser access
+• Verify server is running and accessible
+
+Technical: ${fallbackError.message}` 
+                };
+            }
+            
+            return { success: false, error: fallbackError.message || 'Unknown connection error' };
         }
-        return { success: false, error: error.message };
     }
 }
 

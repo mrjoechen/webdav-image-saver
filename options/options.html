@@ -1,77 +1,196 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>WebDAV Saver Options</title>
     <meta charset="UTF-8">
-    <!-- 引入 Material Design Lite (示例) 或其他 MD 库/自定义 CSS -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-    <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
-    <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebDAV Image Saver - Configuration</title>
     <link rel="stylesheet" href="options.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 </head>
-<body class="mdl-color--grey-100">
-    <div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
-        <header class="mdl-layout__header">
-            <div class="mdl-layout__header-row">
-                <span class="mdl-layout-title">WebDAV Saver Configuration</span>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <span class="material-icons-outlined">cloud_upload</span>
+                    </div>
+                    <div class="logo-text">
+                        <h1>WebDAV Image Saver</h1>
+                        <p>Manage your server configurations</p>
+                    </div>
+                </div>
             </div>
         </header>
-        <main class="mdl-layout__content" style="padding: 20px;">
-            <h4>Manage WebDAV Servers</h4>
 
-            <div id="server-list" class="mdl-grid">
-                <!-- Server configurations will be loaded here -->
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Empty State / Loading -->
+            <div id="empty-state" class="empty-state hidden">
+                <div class="empty-icon">
+                    <span class="material-icons-outlined">storage</span>
+                </div>
+                <h3>No servers configured</h3>
+                <p>Add your first WebDAV server to get started</p>
+                <button class="btn btn-primary" id="add-first-server-btn">
+                    <span class="material-icons-outlined">add</span>
+                    Add Server
+                </button>
             </div>
 
-            <button id="add-server-btn" class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect mdl-button--colored">
-                <i class="material-icons">add</i>
-            </button>
-
-            <!-- Dialog/Form for adding/editing server -->
-            <dialog id="server-dialog" class="mdl-dialog">
-                <h4 class="mdl-dialog__title">Server Details</h4>
-                <div class="mdl-dialog__content">
-                    <input type="hidden" id="edit-id"> <!-- For editing existing server -->
-                     <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                        <input class="mdl-textfield__input" type="text" id="server-name" placeholder="Configuration Name">
-                        <label class="mdl-textfield__label" for="server-name"></label>
-                    </div>
-                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                        <input class="mdl-textfield__input" type="url" id="server-url" placeholder="WebDAV URL">
-                        <label class="mdl-textfield__label" for="server-url"></label>
-                    </div>
-                     <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                        <input class="mdl-textfield__input" type="text" id="server-username" placeholder="Username">
-                        <label class="mdl-textfield__label" for="server-username"></label>
-                    </div>
-                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                        <input class="mdl-textfield__input" type="password" id="server-password" placeholder="Password">
-                        <label class="mdl-textfield__label" for="server-password"></label>
-                    </div>
-                    <button id="test-connection-btn" type="button" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect">
-                        Test Connection
+            <!-- Server List -->
+            <div id="servers-section" class="servers-section">
+                <div class="section-header">
+                    <h2>Your Servers</h2>
+                    <button class="btn btn-primary" id="add-server-btn">
+                        <span class="material-icons-outlined">add</span>
+                        Add Server
                     </button>
-                    <div id="connection-status" style="margin-top: 10px;"></div>
-                    <div id="folder-selection" style="display: none; margin-top: 10px;">
-                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                             <select class="mdl-textfield__input" id="server-folder">
-                                <!-- Options will be populated after successful test -->
-                                <option value="/">/ (Root)</option>
-                             </select>
-                             <label class="mdl-textfield__label" for="server-folder">Target Folder</label>
-                        </div>
-                         <p><small>Enter a new folder path (e.g., /MyImages) or select an existing one.</small></p>
-                         <input class="mdl-textfield__input" type="text" id="new-folder-path" placeholder="Or type new folder path here">
-                    </div>
                 </div>
-                <div class="mdl-dialog__actions">
-                    <button type="button" id="save-server-btn" class="mdl-button mdl-button--colored mdl-js-button mdl-js-ripple-effect">Save</button>
-                    <button type="button" id="close-dialog-btn" class="mdl-button close">Cancel</button>
+                
+                <div id="server-list" class="server-grid">
+                    <!-- Server cards will be populated here -->
                 </div>
-            </dialog>
-
+            </div>
         </main>
     </div>
+
+    <!-- Modal for Adding/Editing Server -->
+    <div id="server-modal" class="modal-overlay hidden">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 id="modal-title">Add New Server</h3>
+                <button class="modal-close" id="close-modal-btn">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+
+            <form id="server-form" class="modal-content">
+                <input type="hidden" id="edit-id">
+                
+                <div class="form-group">
+                    <label for="server-name">Configuration Name</label>
+                    <input 
+                        type="text" 
+                        id="server-name" 
+                        class="form-input" 
+                        placeholder="e.g., My Cloud Storage"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="server-url">WebDAV Server URL</label>
+                    <input 
+                        type="url" 
+                        id="server-url" 
+                        class="form-input" 
+                        placeholder="https://yourserver.com/webdav"
+                        required
+                    >
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="server-username">Username</label>
+                        <input 
+                            type="text" 
+                            id="server-username" 
+                            class="form-input" 
+                            placeholder="Your username"
+                            required
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="server-password">Password</label>
+                        <input 
+                            type="password" 
+                            id="server-password" 
+                            class="form-input" 
+                            placeholder="Your password"
+                        >
+                    </div>
+                </div>
+
+                <!-- Connection Test Section -->
+                <div class="connection-section">
+                    <button type="button" id="test-connection-btn" class="btn btn-secondary">
+                        <span class="material-icons-outlined">wifi_protected_setup</span>
+                        Test Connection
+                    </button>
+                    <div id="connection-status" class="connection-status"></div>
+                </div>
+
+                <!-- Folder Selection (shown after successful connection test) -->
+                <div id="folder-selection" class="form-group hidden">
+                    <label for="server-folder">Target Folder</label>
+                    
+                    <!-- Current Path Display -->
+                    <div class="folder-breadcrumb">
+                        <span class="material-icons-outlined">folder</span>
+                        <span id="current-path">/</span>
+                    </div>
+                    
+                    <!-- Folder Navigation -->
+                    <div class="folder-browser">
+                        <div class="folder-nav-header">
+                            <button type="button" id="folder-back-btn" class="btn btn-sm btn-secondary" disabled>
+                                <span class="material-icons-outlined">arrow_back</span>
+                                Back
+                            </button>
+                            <button type="button" id="folder-refresh-btn" class="btn btn-sm btn-secondary">
+                                <span class="material-icons-outlined">refresh</span>
+                                Refresh
+                            </button>
+                        </div>
+                        
+                        <div class="folder-list" id="folder-list">
+                            <!-- Folders will be populated here -->
+                        </div>
+                        
+                        <div class="folder-actions">
+                            <button type="button" id="select-current-folder-btn" class="btn btn-primary">
+                                <span class="material-icons-outlined">check</span>
+                                Select Current Folder
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-helper">
+                        <span class="material-icons-outlined">info</span>
+                        <span>Or specify a custom folder path:</span>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="custom-folder-path" 
+                        class="form-input" 
+                        placeholder="/MyImages"
+                    >
+                </div>
+            </form>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
+                <button type="submit" form="server-form" class="btn btn-primary" id="save-server-btn">
+                    <span class="material-icons-outlined">save</span>
+                    Save Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification" class="notification hidden">
+        <div class="notification-content">
+            <span class="notification-icon material-icons-outlined"></span>
+            <span class="notification-message"></span>
+        </div>
+    </div>
+
     <script src="options.js"></script>
 </body>
 </html>
