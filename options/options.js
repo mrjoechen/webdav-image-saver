@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
     serverList: document.getElementById('server-list'),
     addServerBtn: document.getElementById('add-server-btn'),
     addFirstServerBtn: document.getElementById('add-first-server-btn'),
+    themeToggleBtn: document.getElementById('theme-toggle-btn'),
+    themeToggleIcon: document.getElementById('theme-toggle-icon'),
     modal: document.getElementById('server-modal'),
     modalTitle: document.getElementById('modal-title'),
     closeModalBtn: document.getElementById('close-modal-btn'),
@@ -16,6 +18,15 @@ document.addEventListener('DOMContentLoaded', () => {
     connectionStatus: document.getElementById('connection-status'),
     folderSelection: document.getElementById('folder-selection'),
     customFolderPath: document.getElementById('custom-folder-path'),
+    openFolderPickerBtn: document.getElementById('open-folder-picker-btn'),
+    folderPickerModal: document.getElementById('folder-picker-modal'),
+    closeFolderPickerBtn: document.getElementById('close-folder-picker-btn'),
+    cancelFolderPickerBtn: document.getElementById('cancel-folder-picker-btn'),
+    selectFolderBtn: document.getElementById('select-folder-btn'),
+    folderPickerBackBtn: document.getElementById('folder-picker-back-btn'),
+    folderPickerRefreshBtn: document.getElementById('folder-picker-refresh-btn'),
+    folderList: document.getElementById('folder-list'),
+    selectedFolderPath: document.getElementById('selected-folder-path'),
     notification: document.getElementById('notification')
   };
 
@@ -28,11 +39,17 @@ document.addEventListener('DOMContentLoaded', () => {
     serverPassword: document.getElementById('server-password')
   };
 
+  const folderPickerState = {
+    config: null,
+    currentPath: '/',
+    selectedPath: '/'
+  };
 
   // Initialize the app
   init();
 
   async function init() {
+    initTheme();
     attachEventListeners();
     await loadServers();
   }
@@ -41,36 +58,74 @@ document.addEventListener('DOMContentLoaded', () => {
     // Modal controls
     elements.addServerBtn?.addEventListener('click', () => openModal());
     elements.addFirstServerBtn?.addEventListener('click', () => openModal());
+    elements.themeToggleBtn?.addEventListener('click', toggleTheme);
     elements.closeModalBtn?.addEventListener('click', () => closeModal());
     elements.cancelBtn?.addEventListener('click', () => closeModal());
     
-    // Click outside modal to close
-    elements.modal?.addEventListener('click', (e) => {
-      if (e.target === elements.modal) closeModal();
-    });
-
     // Form submission
     elements.serverForm?.addEventListener('submit', handleFormSubmit);
     
     // Connection test
     elements.testConnectionBtn?.addEventListener('click', testConnection);
+    elements.openFolderPickerBtn?.addEventListener('click', () => openFolderPicker(elements.customFolderPath?.value || '/'));
+    elements.customFolderPath?.addEventListener('input', updateFolderSelectionFromInput);
+    elements.closeFolderPickerBtn?.addEventListener('click', closeFolderPicker);
+    elements.cancelFolderPickerBtn?.addEventListener('click', closeFolderPicker);
+    elements.selectFolderBtn?.addEventListener('click', confirmFolderSelection);
+    elements.folderPickerBackBtn?.addEventListener('click', openParentFolder);
+    elements.folderPickerRefreshBtn?.addEventListener('click', () => loadFolderPickerPath(folderPickerState.currentPath));
 
 
     // ESC key to close modal
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !elements.modal?.classList.contains('hidden')) {
+      if (e.key !== 'Escape') return;
+
+      if (!elements.folderPickerModal?.classList.contains('hidden')) {
+        closeFolderPicker();
+      } else if (!elements.modal?.classList.contains('hidden')) {
         closeModal();
       }
     });
   }
 
+  function initTheme() {
+    const storedTheme = localStorage.getItem('theme');
+    if (storedTheme === 'light' || storedTheme === 'dark') {
+      document.documentElement.dataset.theme = storedTheme;
+      updateThemeToggle(storedTheme);
+      return;
+    }
+
+    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    updateThemeToggle(systemTheme);
+  }
+
+  function toggleTheme() {
+    const currentTheme = document.documentElement.dataset.theme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    document.documentElement.dataset.theme = nextTheme;
+    localStorage.setItem('theme', nextTheme);
+    updateThemeToggle(nextTheme);
+  }
+
+  function updateThemeToggle(theme) {
+    if (!elements.themeToggleIcon || !elements.themeToggleBtn) return;
+
+    const isDark = theme === 'dark';
+    elements.themeToggleIcon.querySelector('use')?.setAttribute('href', isDark ? '#icon-sun' : '#icon-moon');
+    elements.themeToggleBtn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    elements.themeToggleBtn.setAttribute('title', isDark ? 'Light mode' : 'Dark mode');
+  }
+
   function openModal(serverId = null) {
     if (serverId) {
       loadServerForEdit(serverId);
-      elements.modalTitle.textContent = 'Edit Server Configuration';
+      elements.modalTitle.textContent = 'Edit Server';
     } else {
       resetForm();
-      elements.modalTitle.textContent = 'Add New Server';
+      elements.modalTitle.textContent = 'Add Server';
     }
     
     elements.modal?.classList.remove('hidden');
@@ -92,7 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.connectionStatus.textContent = '';
     elements.connectionStatus.className = 'connection-status';
     elements.folderSelection?.classList.add('hidden');
+    if (elements.folderList) elements.folderList.innerHTML = '';
     elements.customFolderPath.value = '';
+    closeFolderPicker();
+    updateSelectedFolderPath('/');
     
   }
 
@@ -104,18 +162,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       elements.saveServerBtn.disabled = true;
-      elements.saveServerBtn.innerHTML = '<span class="loading">Saving...</span>';
+      elements.saveServerBtn.innerHTML = `${iconSvg('sync', 'loading')}Saving`;
       
       await saveServer(formData);
       closeModal();
       await loadServers();
-      showNotification('Server configuration saved successfully!', 'success');
+      showNotification('Saved', 'success');
     } catch (error) {
       console.error('Error saving server:', error);
-      showNotification('Failed to save server configuration.', 'error');
+      showNotification('Could not save settings.', 'error');
     } finally {
       elements.saveServerBtn.disabled = false;
-      elements.saveServerBtn.innerHTML = '<span class="material-icons-outlined">save</span>Save Configuration';
+      elements.saveServerBtn.innerHTML = `${iconSvg('save')}Save`;
     }
   }
 
@@ -140,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function validateFormData(data) {
     if (!data.name || !data.url || !data.username) {
-      showNotification('Name, URL, and Username are required.', 'error');
+      showNotification('Name, URL, and username are required.', 'error');
       return false;
     }
 
@@ -181,6 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }));
       
       await chrome.storage.sync.set({ webdavServersMetadata: sanitizedServers });
+      await chrome.storage.sync.remove('webdavServers');
       
       // Inform background script about the changes
       chrome.runtime.sendMessage({ action: 'configUpdated' });
@@ -191,11 +250,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function testConnection() {
-    const url = inputs.serverUrl.value.trim();
-    const username = inputs.serverUsername.value.trim();
-    const password = inputs.serverPassword.value;
+    const config = getConnectionConfig();
 
-    if (!url || !username) {
+    if (!config.url || !config.username) {
       showConnectionStatus('URL and Username are required for testing.', 'error');
       elements.folderSelection?.classList.add('hidden');
       return;
@@ -204,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (elements.testConnectionBtn) {
         elements.testConnectionBtn.disabled = true;
-        elements.testConnectionBtn.innerHTML = '<span class="loading">Testing...</span>';
+        elements.testConnectionBtn.innerHTML = `${iconSvg('sync', 'loading')}Testing`;
       }
       showConnectionStatus('Testing connection...', 'loading');
       elements.folderSelection?.classList.add('hidden');
@@ -212,33 +269,238 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const response = await chrome.runtime.sendMessage({
         action: 'testWebdav',
-        config: { url, username, password }
+        config
       });
 
       console.log('Test response from background:', response);
 
       if (response?.success) {
-        showConnectionStatus('✓ Connection successful!', 'success');
+        showConnectionStatus('Connection ready.', 'success');
         elements.folderSelection?.classList.remove('hidden');
+        await openFolderPicker('/', response.folders || ['/']);
       } else {
-        showConnectionStatus(`✗ Connection failed: ${response?.error || 'Unknown error'}`, 'error');
+        showConnectionStatus(`Connection failed: ${response?.error || 'Unknown error'}`, 'error');
         elements.folderSelection?.classList.add('hidden');
+        closeFolderPicker();
       }
     } catch (error) {
       console.error('Error testing connection:', error);
-      showConnectionStatus(`✗ Error: ${error.message || 'Could not contact background script.'}`, 'error');
+      showConnectionStatus(`Error: ${error.message || 'Could not contact background script.'}`, 'error');
       elements.folderSelection?.classList.add('hidden');
+      closeFolderPicker();
     } finally {
       if (elements.testConnectionBtn) {
         elements.testConnectionBtn.disabled = false;
-        elements.testConnectionBtn.innerHTML = '<span class="material-icons-outlined">wifi_protected_setup</span>Test Connection';
+        elements.testConnectionBtn.innerHTML = `${iconSvg('link')}Test`;
       }
     }
   }
 
   function showConnectionStatus(message, type) {
-    elements.connectionStatus.textContent = message;
     elements.connectionStatus.className = `connection-status ${type}`;
+    elements.connectionStatus.innerHTML = `${iconSvg(getStatusIcon(type))}<span>${escapeHTML(message)}</span>`;
+  }
+
+  function getConnectionConfig() {
+    return {
+      url: inputs.serverUrl.value.trim(),
+      username: inputs.serverUsername.value.trim(),
+      password: inputs.serverPassword.value
+    };
+  }
+
+  async function openFolderPicker(startPath = '/', initialFolders = null) {
+    const config = getConnectionConfig();
+    if (!config.url || !config.username) {
+      showNotification('URL and username are required.', 'error');
+      return;
+    }
+
+    folderPickerState.config = config;
+    folderPickerState.currentPath = normalizeFolderPath(startPath);
+    folderPickerState.selectedPath = folderPickerState.currentPath;
+    elements.folderPickerModal?.classList.remove('hidden');
+    updateSelectedFolderPath(folderPickerState.currentPath);
+
+    if (initialFolders) {
+      const childFolders = getChildFolders(initialFolders, folderPickerState.currentPath);
+      renderFolderPickerList(childFolders.length > 0 ? childFolders : normalizeFolderList(initialFolders));
+      return;
+    }
+
+    await loadFolderPickerPath(folderPickerState.currentPath);
+  }
+
+  function closeFolderPicker() {
+    elements.folderPickerModal?.classList.add('hidden');
+  }
+
+  async function loadFolderPickerPath(path) {
+    if (!elements.folderList || !folderPickerState.config) return;
+
+    const normalizedPath = normalizeFolderPath(path);
+    folderPickerState.currentPath = normalizedPath;
+    folderPickerState.selectedPath = normalizedPath;
+    updateSelectedFolderPath(normalizedPath);
+    setFolderPickerLoading(true);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'listWebdavFolders',
+        config: folderPickerState.config,
+        folder: normalizedPath
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.error || 'Could not list folders.');
+      }
+
+      renderFolderPickerList(response.folders || []);
+    } catch (error) {
+      console.error('Error listing folders:', error);
+      renderFolderPickerError(error.message || 'Could not list folders.');
+    } finally {
+      setFolderPickerLoading(false);
+    }
+  }
+
+  function renderFolderPickerList(folders) {
+    if (!elements.folderList) return;
+
+    const normalizedFolders = normalizeFolderList(folders)
+      .filter(folder => folder !== folderPickerState.currentPath);
+    elements.folderList.innerHTML = '';
+    updateSelectedFolderPath(folderPickerState.currentPath);
+    updateFolderPickerBackButton();
+
+    if (normalizedFolders.length === 0) {
+      elements.folderList.innerHTML = `
+        <div class="folder-list-empty">
+          ${iconSvg('folder-open')}
+          <span>No folders here</span>
+        </div>
+      `;
+      return;
+    }
+
+    normalizedFolders.forEach(folder => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'folder-item';
+      item.innerHTML = `
+        ${iconSvg('folder')}
+        <span class="folder-item-text">
+          <span class="folder-item-name">${escapeHTML(getFolderName(folder))}</span>
+          <span class="folder-item-path">${escapeHTML(folder)}</span>
+        </span>
+        ${iconSvg('chevron-right', 'folder-selected-icon')}
+      `;
+      item.addEventListener('click', () => loadFolderPickerPath(folder));
+      elements.folderList.appendChild(item);
+    });
+  }
+
+  function renderFolderPickerError(message) {
+    if (!elements.folderList) return;
+
+    elements.folderList.innerHTML = `
+      <div class="folder-list-empty">
+        ${iconSvg('error')}
+        <span>${escapeHTML(message)}</span>
+      </div>
+    `;
+    updateFolderPickerBackButton();
+  }
+
+  function setFolderPickerLoading(isLoading) {
+    if (!elements.folderList) return;
+
+    elements.folderPickerRefreshBtn.disabled = isLoading;
+    elements.folderPickerBackBtn.disabled = isLoading || folderPickerState.currentPath === '/';
+    elements.selectFolderBtn.disabled = isLoading;
+
+    if (isLoading) {
+      elements.folderList.innerHTML = `
+        <div class="folder-list-empty">
+          ${iconSvg('sync', 'loading')}
+          <span>Loading folders</span>
+        </div>
+      `;
+    }
+  }
+
+  function updateFolderPickerBackButton() {
+    if (elements.folderPickerBackBtn) {
+      elements.folderPickerBackBtn.disabled = folderPickerState.currentPath === '/';
+    }
+  }
+
+  function openParentFolder() {
+    const parentFolder = getParentFolder(folderPickerState.currentPath);
+    loadFolderPickerPath(parentFolder);
+  }
+
+  function confirmFolderSelection() {
+    const selectedPath = normalizeFolderPath(folderPickerState.currentPath);
+    elements.customFolderPath.value = selectedPath;
+    updateSelectedFolderPath(selectedPath);
+    closeFolderPicker();
+  }
+
+  function updateFolderSelectionFromInput() {
+    const normalizedFolder = normalizeFolderPath(elements.customFolderPath?.value || '/');
+    updateSelectedFolderPath(normalizedFolder);
+  }
+
+  function updateSelectedFolderPath(folder) {
+    if (elements.selectedFolderPath) {
+      elements.selectedFolderPath.textContent = normalizeFolderPath(folder);
+    }
+  }
+
+  function normalizeFolderList(folders) {
+    const normalized = (Array.isArray(folders) ? folders : ['/'])
+      .map(normalizeFolderPath)
+      .filter(Boolean);
+
+    return [...new Set(normalized)];
+  }
+
+  function normalizeFolderPath(folder) {
+    const rawFolder = String(folder || '/').trim();
+    if (!rawFolder || rawFolder === '/') return '/';
+
+    let normalized = rawFolder.startsWith('/') ? rawFolder : `/${rawFolder}`;
+    normalized = normalized.replace(/\/+/g, '/');
+    if (normalized.endsWith('/') && normalized.length > 1) {
+      normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
+  }
+
+  function getChildFolders(folders, parentPath) {
+    const normalizedParentPath = normalizeFolderPath(parentPath);
+
+    return normalizeFolderList(folders).filter(folder => {
+      if (folder === normalizedParentPath) return false;
+      return getParentFolder(folder) === normalizedParentPath;
+    });
+  }
+
+  function getParentFolder(folder) {
+    const normalizedFolder = normalizeFolderPath(folder);
+    if (normalizedFolder === '/') return '/';
+
+    const lastSlash = normalizedFolder.lastIndexOf('/');
+    return lastSlash <= 0 ? '/' : normalizedFolder.slice(0, lastSlash);
+  }
+
+  function getFolderName(folder) {
+    const normalizedFolder = normalizeFolderPath(folder);
+    if (normalizedFolder === '/') return '/';
+
+    return normalizedFolder.slice(normalizedFolder.lastIndexOf('/') + 1);
   }
 
   async function loadServers() {
@@ -260,6 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (syncData.webdavServers && !localData.webdavServers) {
         console.log('Migrating server data to local storage for better security');
         await chrome.storage.local.set({ webdavServers: servers });
+        await chrome.storage.sync.remove('webdavServers');
       }
     } catch (error) {
       console.error('Error loading servers:', error);
@@ -296,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     card.innerHTML = `
       <div class="server-card-header">
         <div class="server-card-title">
-          <span class="material-icons-outlined">storage</span>
+          ${iconSvg('storage')}
           ${escapeHTML(server.name)}
         </div>
         <div class="server-card-url">${escapeHTML(server.url)}</div>
@@ -304,12 +567,12 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="server-card-body">
         <div class="server-info">
           <div class="server-info-item">
-            <span class="material-icons-outlined">person</span>
+            ${iconSvg('user')}
             <span class="server-info-label">User:</span>
             <span class="server-info-value">${escapeHTML(server.username)}</span>
           </div>
           <div class="server-info-item">
-            <span class="material-icons-outlined">folder</span>
+            ${iconSvg('folder')}
             <span class="server-info-label">Folder:</span>
             <span class="server-info-value">${escapeHTML(server.folder || '/')}</span>
           </div>
@@ -317,12 +580,10 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <div class="server-card-actions">
         <button class="btn btn-secondary btn-sm edit-btn" data-id="${server.id}">
-          <span class="material-icons-outlined">edit</span>
-          Edit
+          ${iconSvg('edit')}
         </button>
         <button class="btn btn-danger btn-sm delete-btn" data-id="${server.id}" data-name="${escapeHTML(server.name)}">
-          <span class="material-icons-outlined">delete</span>
-          Delete
+          ${iconSvg('trash')}
         </button>
       </div>
     `;
@@ -330,6 +591,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attach event listeners
     const editBtn = card.querySelector('.edit-btn');
     const deleteBtn = card.querySelector('.delete-btn');
+    editBtn?.setAttribute('aria-label', `Edit ${server.name}`);
+    editBtn?.setAttribute('title', 'Edit');
+    deleteBtn?.setAttribute('aria-label', `Delete ${server.name}`);
+    deleteBtn?.setAttribute('title', 'Delete');
     
     editBtn?.addEventListener('click', () => openModal(server.id));
     deleteBtn?.addEventListener('click', () => {
@@ -348,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const server = servers.find(s => s.id === serverId);
       
       if (!server) {
-        showNotification('Server configuration not found.', 'error');
+        showNotification('Server not found.', 'error');
         return;
       }
 
@@ -362,6 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Set the folder path in custom input
       const serverFolder = server.folder || '/';
       elements.customFolderPath.value = serverFolder;
+      updateSelectedFolderPath(serverFolder);
       
       // Show folder selection if we have the info
       if (server.folder) {
@@ -369,12 +635,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.error('Error loading server for edit:', error);
-      showNotification('Failed to load server configuration.', 'error');
+      showNotification('Could not load server.', 'error');
     }
   }
 
   function confirmDeleteServer(serverId, serverName) {
-    if (confirm(`Are you sure you want to delete the configuration "${serverName}"?`)) {
+    if (confirm(`Delete "${serverName}"?`)) {
       deleteServer(serverId);
     }
   }
@@ -397,15 +663,16 @@ document.addEventListener('DOMContentLoaded', () => {
         folder: server.folder
       }));
       await chrome.storage.sync.set({ webdavServersMetadata: sanitizedServers });
+      await chrome.storage.sync.remove('webdavServers');
       
       await loadServers();
-      showNotification('Server configuration deleted successfully.', 'success');
+      showNotification('Deleted', 'success');
       
       // Inform background script
       chrome.runtime.sendMessage({ action: 'configUpdated' });
     } catch (error) {
       console.error('Error deleting server:', error);
-      showNotification('Failed to delete server configuration.', 'error');
+      showNotification('Could not delete server.', 'error');
     }
   }
 
@@ -413,28 +680,40 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!elements.notification) return;
     
     const iconMap = {
-      success: 'check_circle',
+      success: 'check-circle',
       error: 'error',
-      warning: 'warning',
+      warning: 'error',
       info: 'info'
     };
     
     elements.notification.className = `notification ${type}`;
-    elements.notification.querySelector('.notification-icon').textContent = iconMap[type] || 'info';
+    elements.notification.querySelector('.notification-icon').innerHTML = iconSvg(iconMap[type] || 'info');
     elements.notification.querySelector('.notification-message').textContent = message;
     
     elements.notification.classList.remove('hidden');
     
-    // Auto hide after 5 seconds
+    // Toasts stay brief so saves feel light and non-blocking.
     setTimeout(() => {
       elements.notification.classList.add('hidden');
-    }, 5000);
+    }, type === 'success' ? 2200 : 4200);
   }
 
   function escapeHTML(str) {
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(str || ''));
     return div.innerHTML;
+  }
+
+  function iconSvg(name, className = '') {
+    const extraClass = className ? ` ${className}` : '';
+    return `<svg class="ui-icon${extraClass}" aria-hidden="true" focusable="false"><use href="#icon-${name}"></use></svg>`;
+  }
+
+  function getStatusIcon(type) {
+    if (type === 'success') return 'check-circle';
+    if (type === 'error') return 'error';
+    if (type === 'loading') return 'sync';
+    return 'info';
   }
 
 });

@@ -16,8 +16,9 @@ WebDAV Image Saver is a browser extension that allows users to save web images d
 - We do NOT sell or share any user data with third parties
 
 ### Data Storage
-- All server configurations are stored locally in your browser using Chrome's secure storage API
-- Your WebDAV credentials are encrypted and stored locally on your device only
+- Server configurations are stored in Chrome extension storage on your device
+- WebDAV passwords are stored locally by the extension and are not sent to the developer
+- A password-free metadata copy may be stored in Chrome sync storage for compatibility with existing records
 - No data is transmitted to our servers or any third-party services
 
 ### Data Processing
@@ -40,7 +41,7 @@ WebDAV Image Saver is a browser extension that allows users to save web images d
 
 ## Data Security
 - All data remains on your local device
-- WebDAV credentials use Chrome's secure storage with encryption
+- WebDAV credentials rely on Chrome profile and operating-system storage protections
 - Communications with your WebDAV server use HTTPS when available
 - We recommend using HTTPS-enabled WebDAV servers for maximum security
 
@@ -66,8 +67,8 @@ WebDAV Image Saver is a browser extension that allows users to save web images d
 
 ## Contact Information
 If you have questions about this privacy policy or our data practices:
-- Create an issue on our GitHub repository: https://github.com/your-username/webdav-image-saver
-- Email: privacy@your-domain.com
+- Create an issue on our GitHub repository: https://github.com/mrjoechen/webdav-image-saver
+- Email: mrjctech@gmail.com
 
 ## Compliance
 This extension complies with:
@@ -75,5 +76,5 @@ This extension complies with:
 - General Data Protection Regulation (GDPR)
 - California Consumer Privacy Act (CCPA)
 
-Last Updated: [Current Date]
+Last Updated: 2026-08-04
 Version: 1.0.0

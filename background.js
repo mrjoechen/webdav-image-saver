@@ -96,6 +96,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 });
 
+chrome.action.onClicked.addListener(() => {
+    chrome.runtime.openOptionsPage();
+});
+
 
 // --- Listen for Cancellation from Content Script ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -128,6 +132,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(result => sendResponse(result))
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true; // Async response
+    } else if (message.action === 'listWebdavFolders') {
+         listWebdavFolders(message.config, message.folder || '/')
+            .then(result => sendResponse(result))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true; // Async response
     } else if (message.action === 'configUpdated') {
         console.log('Configuration updated, reloading...');
         loadConfig().then(() => {
@@ -155,6 +164,7 @@ async function loadConfig() {
         if (syncData.webdavServers && !localData.webdavServers) {
             console.log('Migrating server data to local storage for better security');
             await chrome.storage.local.set({ webdavServers: webdavServers });
+            await chrome.storage.sync.remove('webdavServers');
         }
     } catch (error) {
         console.error("Error loading configuration:", error);
@@ -225,14 +235,12 @@ async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId) {
         console.log(`[${uploadId}] Image fetched: ${imageBlob.size} bytes, type: ${imageBlob.type}`);
 
         // 3. Construct WebDAV URL (as before)
-        let folderPath = serverConfig.folder.endsWith('/') && serverConfig.folder.length > 1 ? serverConfig.folder.slice(0, -1) : serverConfig.folder;
-        let baseUrl = serverConfig.url.endsWith('/') ? serverConfig.url.slice(0, -1) : serverConfig.url;
-        const targetUrl = `${baseUrl}${folderPath}/${filename}`;
+        const targetUrl = buildWebdavResourceUrl(serverConfig.url, serverConfig.folder || '/', filename);
         console.log(`[${uploadId}] Target WebDAV URL: ${targetUrl}`);
 
         // 4. Prepare Headers (as before)
         const headers = new Headers();
-        headers.append('Authorization', 'Basic ' + btoa(`${serverConfig.username}:${serverConfig.password}`));
+        headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
         headers.append('Content-Type', imageBlob.type || 'application/octet-stream');
 
         // 5. Perform PUT request (as before)
@@ -308,192 +316,200 @@ function generateFilename(imageUrl, pageUrl) {
     }
 }
 
-// --- Show Upload Result Notification ---
-function showUploadResultNotification(serverName, success, message) {
-    chrome.notifications.create({
-        type: 'basic',
-        iconUrl: success ? 'icons/icon128.png' : 'icons/icon_error.png', // You might need an error icon
-        title: success ? 'Upload Successful' : 'Upload Failed',
-        message: success ? `Image saved as "${message}" to "${serverName}"` : `Failed to save to "${serverName}": ${message}`,
-        priority: success ? 0 : 1
-    });
-}
-
-
-// --- WebDAV Connection Test Logic (Using Regex) ---
+// --- WebDAV Folder Browsing ---
 async function testWebdavConnection(config) {
     console.log("Testing connection to:", config.url);
-    const headers = new Headers();
-    headers.append('Authorization', 'Basic ' + btoa(`${config.username}:${config.password}`));
-    headers.append('Depth', '1'); // Request listing of immediate children
-
-    let testUrl = config.url;
-    // Ensure URL ends with a slash for PROPFIND on a collection
-    if (!testUrl.endsWith('/')) {
-        testUrl += '/';
-    }
 
     try {
-        // Add CORS-friendly headers for browser extension
-        headers.append('Content-Type', 'application/xml; charset=utf-8');
-        
-        const response = await fetch(testUrl, {
-            method: 'PROPFIND',
-            headers: headers,
-            mode: 'cors',
-            credentials: 'omit',
-            // Add minimal PROPFIND body to avoid some server issues
-            body: '<?xml version="1.0" encoding="utf-8"?>\n<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>'
-        });
-
-        console.log(`PROPFIND response status: ${response.status}`);
-
-        // 207 Multi-Status is the expected success code for PROPFIND
-        if (response.status === 207) {
-            const responseText = await response.text();
-            const folders = [];
-
-            // Regex to find content within <href>...</href> or <D:href>...</D:href> tags
-            // This is a simplified regex, might need adjustments based on actual server response
-            const hrefRegex = /<(?:\w+:)?href[^>]*>([^<]+)<\/(?:\w+:)?href>/gi;
-            let match;
-
-            while ((match = hrefRegex.exec(responseText)) !== null) {
-                try {
-                    const rawHref = match[1].trim(); // Content like /remote.php/dav/files/user/Documents/
-
-                    // We only want directories, identified by ending with a slash
-                    if (rawHref && rawHref.endsWith('/')) {
-                        let path = decodeURIComponent(rawHref); // Decode URL encoding like %20
-
-                        // --- Path Normalization (Crucial) ---
-                        // We need to make the path relative to the *base* WebDAV folder specified in config.url
-                        let baseUrlPath = '/'; // Default assumption (root)
-                        try {
-                             // Parse the configured URL to get its path component
-                             const configUrl = new URL(config.url);
-                             if (configUrl.pathname && configUrl.pathname !== '/') {
-                                 baseUrlPath = configUrl.pathname;
-                                 // Ensure the base path ends with a slash for proper comparison/stripping
-                                 if (!baseUrlPath.endsWith('/')) {
-                                     // Handle case where config URL might be '.../files/user' vs '.../files/user/'
-                                      // We want the directory containing the target, so add / or go up one level
-                                     const lastSlash = baseUrlPath.lastIndexOf('/');
-                                     if(lastSlash > 0) { // Check if not like '/file'
-                                          baseUrlPath = baseUrlPath.substring(0, lastSlash + 1);
-                                     } else {
-                                         baseUrlPath = '/'; // Fallback to root if structure is unexpected
-                                     }
-                                 }
-                             }
-                        } catch(e) {
-                            console.warn("Could not parse config URL for base path, assuming root.", e);
-                        }
-
-
-                        // If the found path starts with the base path, remove the base path part
-                        // Need case-insensitive comparison? Maybe not for paths.
-                        if (path.startsWith(baseUrlPath)) {
-                            path = path.substring(baseUrlPath.length);
-                        }
-
-                        // --- Clean up the relative path ---
-                        // Remove leading slash if present (we'll add it back consistently)
-                        if (path.startsWith('/')) {
-                             path = path.substring(1);
-                        }
-                        // Remove trailing slash (it's guaranteed by the check above, unless it was only "/")
-                        if (path.endsWith('/') && path.length > 0) {
-                            path = path.slice(0, -1);
-                        }
-
-                        // Add the leading slash for representation in the dropdown, skip empty root path ('')
-                        if (path !== '') {
-                            folders.push('/' + path);
-                        }
-                    }
-                } catch (e) {
-                    // Handle potential errors during decoding or processing a single href
-                    console.warn(`Skipping href due to processing error: ${match ? match[1] : 'N/A'}`, e);
-                }
-            }
-
-            console.log("Found folders via regex:", folders);
-            // Add root folder explicitly and ensure uniqueness
-            const uniqueFolders = ['/', ...new Set(folders)];
-            // Sort folders alphabetically after root? Optional.
-            // uniqueFolders.sort((a, b) => {
-            //    if (a === '/') return -1;
-            //    if (b === '/') return 1;
-            //    return a.localeCompare(b);
-            // });
-
-            return { success: true, folders: uniqueFolders };
-
-        } else if (response.status === 401) {
-            throw new Error('Authentication failed (Unauthorized). Check username/password.');
-        } else if (response.status === 404) {
-             throw new Error('URL Not Found (404). Check the WebDAV URL path.');
-        } else {
-             // Try reading the body for more info on other errors
-             let errorDetails = `Unexpected status code: ${response.status} ${response.statusText}`;
-             try {
-                 const errorText = await response.text();
-                  if(errorText) errorDetails += ` - ${errorText.substring(0, 200)}`; // Show beginning of error body
-             } catch(e) { /* ignore */}
-             throw new Error(errorDetails);
-        }
+        return await listWebdavFolders(config, '/');
     } catch (error) {
         console.error("WebDAV PROPFIND test failed:", error);
-        
-        // Fallback: Try simpler HEAD request if PROPFIND fails
-        try {
-            console.log("Attempting fallback HEAD request...");
-            const fallbackHeaders = new Headers();
-            fallbackHeaders.append('Authorization', 'Basic ' + btoa(`${config.username}:${config.password}`));
-            
-            const headResponse = await fetch(testUrl, {
-                method: 'HEAD',
-                headers: fallbackHeaders,
-                mode: 'cors',
-                credentials: 'omit'
-            });
-            
-            if (headResponse.ok || headResponse.status === 404) {
-                // 404 is acceptable for HEAD on a collection, means auth worked
-                console.log("Fallback HEAD request successful");
-                return { 
-                    success: true, 
-                    folders: ['/'], // Return root folder only for fallback
-                    message: 'Connection test passed (limited folder browsing)'
-                };
-            } else if (headResponse.status === 401) {
-                return { success: false, error: 'Authentication failed. Check username and password.' };
-            } else {
-                return { success: false, error: `Server error: ${headResponse.status} ${headResponse.statusText}` };
-            }
-        } catch (fallbackError) {
-            console.error("Fallback HEAD request also failed:", fallbackError);
-            
-            // Check if it's a CORS/network error specifically
-            if (fallbackError instanceof TypeError && fallbackError.message.includes('fetch')) {
-                return { 
-                    success: false, 
-                    error: `🚫 CORS/Network Error: Cannot connect to ${config.url}
-                    
-Possible solutions:
-• Configure CORS on your WebDAV server
-• Use HTTPS instead of HTTP  
-• Check if server allows browser access
-• Verify server is running and accessible
+        return await fallbackHeadConnectionTest(config, error);
+    }
+}
 
-Technical: ${fallbackError.message}` 
-                };
+async function listWebdavFolders(config, folder = '/') {
+    const normalizedFolder = normalizeWebdavFolder(folder);
+    const targetUrl = buildWebdavCollectionUrl(config.url, normalizedFolder);
+    const headers = new Headers();
+    headers.append('Authorization', basicAuthHeader(config.username, config.password));
+    headers.append('Depth', '1');
+    headers.append('Content-Type', 'application/xml; charset=utf-8');
+
+    console.log(`Listing WebDAV folder: ${targetUrl}`);
+
+    const response = await fetch(targetUrl, {
+        method: 'PROPFIND',
+        headers,
+        mode: 'cors',
+        credentials: 'omit',
+        body: '<?xml version="1.0" encoding="utf-8"?>\n<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>'
+    });
+
+    console.log(`PROPFIND response status: ${response.status}`);
+
+    if (response.status === 207) {
+        const responseText = await response.text();
+        return {
+            success: true,
+            folder: normalizedFolder,
+            folders: parseWebdavChildFolders(responseText, config.url, normalizedFolder)
+        };
+    }
+
+    if (response.status === 401) {
+        throw new Error('Authentication failed. Check username and password.');
+    }
+
+    if (response.status === 404) {
+        throw new Error('Folder not found. Check the WebDAV URL or folder path.');
+    }
+
+    let errorDetails = `Server error: ${response.status} ${response.statusText}`;
+    try {
+        const errorText = await response.text();
+        if (errorText) errorDetails += ` - ${errorText.substring(0, 200)}`;
+    } catch (e) {
+        // Ignore body read errors.
+    }
+    throw new Error(errorDetails);
+}
+
+async function fallbackHeadConnectionTest(config, originalError) {
+    try {
+        console.log("Attempting fallback HEAD request...");
+        const fallbackHeaders = new Headers();
+        fallbackHeaders.append('Authorization', basicAuthHeader(config.username, config.password));
+
+        const headResponse = await fetch(buildWebdavCollectionUrl(config.url, '/'), {
+            method: 'HEAD',
+            headers: fallbackHeaders,
+            mode: 'cors',
+            credentials: 'omit'
+        });
+
+        if (headResponse.ok || headResponse.status === 404) {
+            console.log("Fallback HEAD request successful");
+            return {
+                success: true,
+                folders: ['/'],
+                message: 'Connection test passed with limited folder browsing.'
+            };
+        }
+
+        if (headResponse.status === 401) {
+            return { success: false, error: 'Authentication failed. Check username and password.' };
+        }
+
+        return { success: false, error: `Server error: ${headResponse.status} ${headResponse.statusText}` };
+    } catch (fallbackError) {
+        console.error("Fallback HEAD request also failed:", fallbackError);
+        return { success: false, error: fallbackError.message || originalError.message || 'Unknown connection error' };
+    }
+}
+
+function parseWebdavChildFolders(responseText, baseUrl, parentFolder) {
+    const basePath = getWebdavBasePath(baseUrl);
+    const normalizedParent = normalizeWebdavFolder(parentFolder);
+    const folders = new Set();
+    const hrefRegex = /<(?:\w+:)?href[^>]*>([^<]+)<\/(?:\w+:)?href>/gi;
+    let match;
+
+    while ((match = hrefRegex.exec(responseText)) !== null) {
+        try {
+            const rawHref = match[1].trim();
+            if (!rawHref || !rawHref.endsWith('/')) continue;
+
+            const hrefPath = getHrefPath(rawHref);
+            let relativePath = hrefPath.startsWith(basePath)
+                ? hrefPath.substring(basePath.length)
+                : hrefPath.replace(/^\/+/, '');
+
+            relativePath = relativePath.replace(/\/+$/, '');
+            const folderPath = normalizeWebdavFolder(relativePath ? `/${relativePath}` : '/');
+
+            if (folderPath !== normalizedParent && getWebdavParentFolder(folderPath) === normalizedParent) {
+                folders.add(folderPath);
             }
-            
-            return { success: false, error: fallbackError.message || 'Unknown connection error' };
+        } catch (error) {
+            console.warn(`Skipping href due to processing error: ${match ? match[1] : 'N/A'}`, error);
         }
     }
+
+    return [...folders].sort((a, b) => a.localeCompare(b));
+}
+
+function buildWebdavCollectionUrl(baseUrl, folder) {
+    const trimmedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const normalizedFolder = normalizeWebdavFolder(folder);
+
+    if (normalizedFolder === '/') {
+        return `${trimmedBaseUrl}/`;
+    }
+
+    const encodedFolder = normalizedFolder
+        .split('/')
+        .filter(Boolean)
+        .map(segment => encodeURIComponent(segment))
+        .join('/');
+
+    return `${trimmedBaseUrl}/${encodedFolder}/`;
+}
+
+function buildWebdavResourceUrl(baseUrl, folder, filename) {
+    return `${buildWebdavCollectionUrl(baseUrl, folder)}${encodeURIComponent(filename)}`;
+}
+
+function basicAuthHeader(username, password) {
+    const bytes = new TextEncoder().encode(`${username || ''}:${password || ''}`);
+    let binary = '';
+
+    bytes.forEach(byte => {
+        binary += String.fromCharCode(byte);
+    });
+
+    return `Basic ${btoa(binary)}`;
+}
+
+function getWebdavBasePath(baseUrl) {
+    const url = new URL(baseUrl);
+    let pathname = decodeURIComponent(url.pathname || '/');
+
+    if (!pathname.endsWith('/')) {
+        pathname += '/';
+    }
+
+    return pathname;
+}
+
+function getHrefPath(href) {
+    try {
+        return decodeURIComponent(new URL(href).pathname);
+    } catch (error) {
+        return decodeURIComponent(href.split(/[?#]/)[0]);
+    }
+}
+
+function normalizeWebdavFolder(folder) {
+    const rawFolder = String(folder || '/').trim();
+    if (!rawFolder || rawFolder === '/') return '/';
+
+    let normalized = rawFolder.startsWith('/') ? rawFolder : `/${rawFolder}`;
+    normalized = normalized.replace(/\/+/g, '/');
+
+    if (normalized.endsWith('/') && normalized.length > 1) {
+        normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
+}
+
+function getWebdavParentFolder(folder) {
+    const normalizedFolder = normalizeWebdavFolder(folder);
+    if (normalizedFolder === '/') return '/';
+
+    const lastSlash = normalizedFolder.lastIndexOf('/');
+    return lastSlash <= 0 ? '/' : normalizedFolder.slice(0, lastSlash);
 }
 
 // --- Initial load and menu creation on startup ---

@@ -1,71 +1,131 @@
-# Privacy Policy for WebDAV Image Saver Chrome Extension
+# WebDAV Image Saver
 
-**Effective Date:** [2025-04-28]
+Save web images directly to your own WebDAV server from Chrome's right-click menu.
 
-Thank you for using WebDAV Image Saver ("the Extension"). This policy explains how we handle information when you use the Extension. Our core principle is to collect and handle the minimum information necessary for the Extension to function and to ensure your data remains under your control.
+WebDAV Image Saver is a Manifest V3 Chrome extension for people who keep images in Nextcloud, ownCloud, Synology, QNAP, or any other WebDAV-compatible storage. It does not use a hosted backend. Configuration, image fetching, folder browsing, and uploads happen inside your browser.
 
-**1. Information We Handle**
+## Features
 
-The Extension needs access to certain information to perform its core function of saving images to your WebDAV server. This includes:
+- Save any right-clicked web image to a configured WebDAV destination.
+- Configure multiple WebDAV servers.
+- Test WebDAV connectivity before saving.
+- Browse multi-level WebDAV folders and choose a target folder.
+- Show a short countdown bubble before upload, with a cancel action.
+- Open the settings page from the extension toolbar icon.
+- Light/dark monochrome settings UI with packaged SVG icons.
 
-*   **User-Provided WebDAV Configuration:**
-    *   **What:** The WebDAV server URL, username, password, and target folder path you enter into the Extension's options page.
-    *   **Why:** This information is essential to establish a connection with YOUR specified WebDAV server and upload images to the correct location.
-    *   **How Handled:** This configuration data is stored locally on your computer using the `chrome.storage.sync` API. This means it persists across browser sessions and, if you have Chrome Sync enabled, may be synchronized across your logged-in Chrome instances. **This data is NEVER transmitted to the developer or any third-party server.** It is only used by the Extension running in *your* browser to communicate directly with *your* specified WebDAV server.
-*   **Image Data:**
-    *   **What:** The binary data of the specific image you choose to save by right-clicking and selecting a destination.
-    *   **Why:** This is the content you intend to save to your WebDAV server.
-    *   **How Handled:** When you initiate a save, the Extension fetches the image data from its source URL. This data is held temporarily in your browser's memory *only* during the upload process. It is sent directly from your browser to your specified WebDAV server. **The image data is NEVER stored permanently by the Extension itself, nor is it sent to the developer or any third party.**
-*   **Source Image URL and Page URL:**
-    *   **What:** The URL of the image you right-clicked on, and the URL of the webpage where the image was found.
-    *   **Why:** The image URL is needed to fetch the image data. The page URL's domain name is used to generate the default filename for the saved image (e.g., `image_..._websitedomain_com.ext`).
-    *   **How Handled:** These URLs are used temporarily during the fetch and upload process. They are **NOT stored by the Extension** after the operation is complete and are **NOT sent to the developer or any third party.**
+## Install for Development
 
-**2. Information We DO NOT Collect**
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select this repository folder.
+5. Click the extension icon to open settings.
 
-We believe in minimizing data collection. The Extension **DOES NOT** collect, store, or transmit:
+## Configure a WebDAV Server
 
-*   Your browsing history (except for the transient use of the current page URL for filename generation).
-*   Any personal identification information (like your name, email address, etc.).
-*   Usage analytics or tracking data about how you interact with the Extension or websites.
-*   Any data from your WebDAV server other than what's necessary for connection testing (PROPFIND on the target directory) and uploading (PUT request).
-*   Any other content from the webpages you visit.
+1. Open the settings page.
+2. Click **Add**.
+3. Enter:
+   - `Name`
+   - `Server URL`, for example `https://example.com/remote.php/dav/files/username`
+   - `Username`
+   - `Password`
+4. Click **Test**.
+5. If the connection succeeds, choose a folder in the folder picker.
+6. Click **Save**.
 
-**3. How Information Is Used**
+Use HTTPS WebDAV URLs whenever possible. HTTP may work technically, but it sends Basic Auth credentials without transport encryption.
 
-The limited information handled by the Extension is used *solely* for the following purposes, initiated by you:
+## Usage
 
-*   To authenticate and connect to the WebDAV server(s) you have configured.
-*   To test the connection to your configured WebDAV server.
-*   To list folders on your WebDAV server (during configuration).
-*   To fetch the image you select.
-*   To upload the selected image data to your specified WebDAV server and folder.
-*   To generate a descriptive filename for the saved image.
-*   To display status notifications (countdown, success, error) within your browser.
+1. Right-click an image on a web page.
+2. Choose **Save Image to WebDAV**.
+3. Pick the configured server destination.
+4. Wait for the countdown or click **Cancel**.
 
-**4. Data Storage and Transmission**
+The extension generates filenames like:
 
-*   **Storage:** Configuration data (URL, credentials, folder) is stored locally using `chrome.storage.sync`. Image data is only held in memory during upload.
-*   **Transmission:** All communication related to your WebDAV server (connection tests, folder listing, image uploads) happens **directly between your browser and the WebDAV server URL you provide.** Your credentials and image data are **NEVER** routed through or stored on servers controlled by the developer or any third party. We recommend using HTTPS for your WebDAV server URL for secure transmission.
+```text
+image_YYYYMMDDHHMMSS_example_com.jpg
+```
 
-**5. Data Sharing**
+## Permissions
 
-We **DO NOT** share any of your information (configuration, image data, URLs) with any third parties. Period.
+The extension requests these permissions:
 
-**6. Permissions**
+- `contextMenus`: Adds the right-click save menu for images.
+- `storage`: Stores WebDAV server configurations in Chrome extension storage.
+- `scripting`: Injects the countdown/status bubble into the current page after you choose a save action.
+- `host_permissions: <all_urls>`: Fetches the selected image URL and connects to user-provided WebDAV URLs.
 
-The Extension requests the minimum permissions necessary for its functionality:
-*   `contextMenus`: To add the right-click save option.
-*   `storage`: To save your server configurations.
-*   `scripting`: To show in-page notifications/bubbles.
-*   `host_permissions` (`<all_urls>`): To fetch images from any site and connect to your user-defined WebDAV server.
+## Data Handling
 
-**7. Changes to This Privacy Policy**
+- WebDAV configuration is stored in `chrome.storage.local`.
+- A password-free metadata copy is stored in `chrome.storage.sync` for compatibility with existing records.
+- Images are fetched and uploaded directly by the browser.
+- No analytics, tracking, hosted API, or developer-operated server is used.
+- Credentials are not app-level encrypted by this extension. They rely on Chrome profile and operating-system storage protections.
 
-We may update this Privacy Policy from time to time. If we make significant changes, we will notify you through the Extension update process or by posting the new policy prominently. Your continued use of the Extension after changes signifies your acceptance of the revised policy.
+See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 
-**8. Contact Us**
+## Development Checks
 
-If you have any questions or concerns about this Privacy Policy or the Extension's handling of data, please open an issue on our GitHub repository: [Link to Your GitHub Issues Page] or contact us at [mrjctech@gmail.com].
+Run syntax checks before packaging:
 
----
+```bash
+node --check background.js
+node --check content_script.js
+node --check options/options.js
+```
+
+Check for remote resources before Chrome Web Store submission:
+
+```bash
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json background.js content_script.js options assets
+```
+
+The options page should use only packaged files and inline SVG symbols. Do not add remotely hosted scripts, styles, fonts, or icon fonts.
+
+## Chrome Web Store Packaging
+
+Recommended package contents:
+
+```text
+manifest.json
+background.js
+content_script.js
+assets/
+icons/
+options/
+PRIVACY.md
+STORE_DESCRIPTION.md
+```
+
+Do not include repository-only files in the upload ZIP, such as `.git`, `docs/`, development notes, screenshots-in-progress, or OS metadata.
+
+Manual packaging example:
+
+```bash
+mkdir -p dist/webdav-image-saver
+cp manifest.json background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
+cp -R assets icons options dist/webdav-image-saver/
+cd dist
+zip -X -r webdav-image-saver.zip webdav-image-saver
+```
+
+Before upload, verify:
+
+- Manifest version and description are final.
+- Icons are exactly 16x16, 48x48, and 128x128.
+- The ZIP contains only runtime files.
+- The privacy policy URL is public and matches actual behavior.
+- Store listing claims match implemented features.
+
+## Repository
+
+GitHub: [mrjoechen/webdav-image-saver](https://github.com/mrjoechen/webdav-image-saver)
+
+## License
+
+Add a license before publishing if this repository is intended to be open source.

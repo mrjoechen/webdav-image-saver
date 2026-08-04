@@ -3,26 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebDAV Image Saver - Configuration</title>
+    <title>WebDAV Image Saver - Settings</title>
     <link rel="stylesheet" href="options.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 </head>
 <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+        <symbol id="icon-cloud-upload" viewBox="0 0 24 24"><path d="M16 16l-4-4-4 4"/><path d="M12 12v9"/><path d="M20 17.6A5 5 0 0 0 17 8h-1.3A7 7 0 1 0 5 15.7"/></symbol>
+        <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M21 13.2A8.5 8.5 0 0 1 10.8 3a7 7 0 1 0 10.2 10.2Z"/></symbol>
+        <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.93 19.07l1.41-1.41"/><path d="M17.66 6.34l1.41-1.41"/></symbol>
+        <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+        <symbol id="icon-storage" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+        <symbol id="icon-close" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></symbol>
+        <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></symbol>
+        <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5V10"/><path d="M3 9h18l-2 9.5A2 2 0 0 1 17 20H5a2 2 0 0 1-2-2.5L5 9"/></symbol>
+        <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></symbol>
+        <symbol id="icon-save" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></symbol>
+        <symbol id="icon-arrow-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16"/><path d="M20 20v-4h-4"/></symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+        <symbol id="icon-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16"/><path d="M20 20v-4h-4"/></symbol>
+        <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+        <symbol id="icon-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 17h.01"/></symbol>
+        <symbol id="icon-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+        <symbol id="icon-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+        <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 15H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+        <symbol id="icon-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-5"/></symbol>
+        <symbol id="icon-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.86 8.38 6.84 9.74.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.88-2.78.62-3.37-1.21-3.37-1.21-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.31 9.31 0 0 1 12 7.01c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.15 10.15 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></symbol>
+    </svg>
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
             <div class="header-content">
                 <div class="logo-section">
                     <div class="logo-icon">
-                        <span class="material-icons-outlined">cloud_upload</span>
+                        <svg class="ui-icon"><use href="#icon-cloud-upload"></use></svg>
                     </div>
                     <div class="logo-text">
                         <h1>WebDAV Image Saver</h1>
-                        <p>Manage your server configurations</p>
+                        <p>WebDAV upload settings</p>
                     </div>
+                </div>
+                <div class="header-actions">
+                    <a class="icon-button github-link" href="https://github.com/mrjoechen/webdav-image-saver" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository" title="GitHub">
+                        <svg class="ui-icon github-icon"><use href="#icon-github"></use></svg>
+                    </a>
+                    <button class="icon-button theme-toggle" id="theme-toggle-btn" type="button" aria-label="Switch theme" title="Switch theme">
+                        <svg class="ui-icon" id="theme-toggle-icon"><use href="#icon-moon"></use></svg>
+                    </button>
                 </div>
             </div>
         </header>
@@ -32,23 +60,22 @@
             <!-- Empty State / Loading -->
             <div id="empty-state" class="empty-state hidden">
                 <div class="empty-icon">
-                    <span class="material-icons-outlined">storage</span>
+                    <svg class="ui-icon"><use href="#icon-storage"></use></svg>
                 </div>
-                <h3>No servers configured</h3>
-                <p>Add your first WebDAV server to get started</p>
+                <h3>No servers yet</h3>
+                <p>Add a WebDAV endpoint for right-click image saving.</p>
                 <button class="btn btn-primary" id="add-first-server-btn">
-                    <span class="material-icons-outlined">add</span>
-                    Add Server
+                    <svg class="ui-icon"><use href="#icon-plus"></use></svg>
+                    Add
                 </button>
             </div>
 
             <!-- Server List -->
             <div id="servers-section" class="servers-section">
                 <div class="section-header">
-                    <h2>Your Servers</h2>
-                    <button class="btn btn-primary" id="add-server-btn">
-                        <span class="material-icons-outlined">add</span>
-                        Add Server
+                    <h2>Servers</h2>
+                    <button class="icon-button add-server-button" id="add-server-btn" type="button" aria-label="Add server" title="Add server">
+                        <svg class="ui-icon"><use href="#icon-plus"></use></svg>
                     </button>
                 </div>
                 
@@ -63,9 +90,9 @@
     <div id="server-modal" class="modal-overlay hidden">
         <div class="modal-container">
             <div class="modal-header">
-                <h3 id="modal-title">Add New Server</h3>
-                <button class="modal-close" id="close-modal-btn">
-                    <span class="material-icons-outlined">close</span>
+                <h3 id="modal-title">Add Server</h3>
+                <button class="icon-button modal-close" id="close-modal-btn" type="button" aria-label="Close" title="Close">
+                    <svg class="ui-icon"><use href="#icon-close"></use></svg>
                 </button>
             </div>
 
@@ -73,18 +100,18 @@
                 <input type="hidden" id="edit-id">
                 
                 <div class="form-group">
-                    <label for="server-name">Configuration Name</label>
+                    <label for="server-name">Name</label>
                     <input 
                         type="text" 
                         id="server-name" 
                         class="form-input" 
-                        placeholder="e.g., My Cloud Storage"
+                        placeholder="Personal cloud"
                         required
                     >
                 </div>
 
                 <div class="form-group">
-                    <label for="server-url">WebDAV Server URL</label>
+                    <label for="server-url">Server URL</label>
                     <input 
                         type="url" 
                         id="server-url" 
@@ -119,24 +146,29 @@
                 <!-- Connection Test Section -->
                 <div class="connection-section">
                     <button type="button" id="test-connection-btn" class="btn btn-secondary">
-                        <span class="material-icons-outlined">wifi_protected_setup</span>
-                        Test Connection
+                        <svg class="ui-icon"><use href="#icon-link"></use></svg>
+                        Test
                     </button>
                     <div id="connection-status" class="connection-status"></div>
                 </div>
 
                 <!-- Target Folder Path -->
                 <div id="folder-selection" class="form-group hidden">
-                    <label for="custom-folder-path">Target Folder Path</label>
-                    <input 
-                        type="text" 
-                        id="custom-folder-path" 
-                        class="form-input" 
-                        placeholder="/MyImages"
-                    >
+                    <label for="custom-folder-path">Target folder</label>
+                    <div class="folder-input-row">
+                        <input 
+                            type="text" 
+                            id="custom-folder-path" 
+                            class="form-input" 
+                            placeholder="/MyImages"
+                        >
+                        <button type="button" class="icon-button" id="open-folder-picker-btn" aria-label="Browse folders" title="Browse folders">
+                            <svg class="ui-icon"><use href="#icon-folder-open"></use></svg>
+                        </button>
+                    </div>
                     <div class="form-helper">
-                        <span class="material-icons-outlined">info</span>
-                        <span>Specify the folder path on the WebDAV server where images will be saved</span>
+                        <svg class="ui-icon"><use href="#icon-info"></use></svg>
+                        <span>Images are saved to this WebDAV folder.</span>
                     </div>
                 </div>
             </form>
@@ -144,8 +176,44 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
                 <button type="submit" form="server-form" class="btn btn-primary" id="save-server-btn">
-                    <span class="material-icons-outlined">save</span>
-                    Save Configuration
+                    <svg class="ui-icon"><use href="#icon-save"></use></svg>
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder Picker -->
+    <div id="folder-picker-modal" class="modal-overlay folder-picker-overlay hidden">
+        <div class="modal-container folder-picker-container">
+            <div class="modal-header">
+                <h3>Choose Folder</h3>
+                <button class="icon-button modal-close" id="close-folder-picker-btn" type="button" aria-label="Close folder picker" title="Close">
+                    <svg class="ui-icon"><use href="#icon-close"></use></svg>
+                </button>
+            </div>
+
+            <div class="folder-picker-content">
+                <div class="folder-picker-toolbar">
+                    <button type="button" class="icon-button" id="folder-picker-back-btn" aria-label="Parent folder" title="Parent folder">
+                        <svg class="ui-icon"><use href="#icon-arrow-back"></use></svg>
+                    </button>
+                    <div class="folder-breadcrumb">
+                        <svg class="ui-icon"><use href="#icon-folder-open"></use></svg>
+                        <span id="selected-folder-path">/</span>
+                    </div>
+                    <button type="button" class="icon-button" id="folder-picker-refresh-btn" aria-label="Refresh folders" title="Refresh">
+                        <svg class="ui-icon"><use href="#icon-refresh"></use></svg>
+                    </button>
+                </div>
+                <div id="folder-list" class="folder-list folder-picker-list"></div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancel-folder-picker-btn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="select-folder-btn">
+                    <svg class="ui-icon"><use href="#icon-check"></use></svg>
+                    Select
                 </button>
             </div>
         </div>
@@ -154,7 +222,7 @@
     <!-- Notification Toast -->
     <div id="notification" class="notification hidden">
         <div class="notification-content">
-            <span class="notification-icon material-icons-outlined"></span>
+            <span class="notification-icon"></span>
             <span class="notification-message"></span>
         </div>
     </div>

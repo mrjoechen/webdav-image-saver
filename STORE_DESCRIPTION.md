@@ -13,7 +13,7 @@ WebDAV Image Saver makes it incredibly easy to save web images directly to your 
 
 **🔒 Privacy First**
 - All data stays on your device - no external servers involved
-- Your credentials are encrypted and stored locally only
+- Your credentials are stored locally by the extension
 - Direct connection between your browser and your WebDAV server
 
 **⚡ Simple & Fast**
