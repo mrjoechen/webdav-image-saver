@@ -206,17 +206,12 @@ button {
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  color: var(--text-primary);
-  background: var(--surface-strong);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.32),
-    0 10px 30px rgb(0 0 0 / 0.08);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.logo-image {
+  display: block;
+  width: 42px;
+  height: 42px;
 }
 
 .logo-text {
