@@ -1,6 +1,10 @@
 # WebDAV Image Saver
 
-[![Install from the Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep)
+[简体中文](README.zh-CN.md)
+
+<a href="https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep">
+  <img src="store-assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206">
+</a>
 
 Save web images directly to your own WebDAV server from Chrome's right-click menu.
 
