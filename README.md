@@ -1,8 +1,34 @@
 # WebDAV Image Saver
 
+[![Install from the Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep)
+
 Save web images directly to your own WebDAV server from Chrome's right-click menu.
 
 WebDAV Image Saver is a Manifest V3 Chrome extension for people who keep images in Nextcloud, ownCloud, Synology, QNAP, or any other WebDAV-compatible storage. It does not use a hosted backend. Configuration, image fetching, folder browsing, and uploads happen inside your browser.
+
+## Install from the Chrome Web Store
+
+WebDAV Image Saver is available on the official Chrome Web Store:
+
+**[Install WebDAV Image Saver](https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep)**
+
+After installation, click the extension icon to configure your WebDAV server. You can pin the extension from Chrome's Extensions menu for quicker access.
+
+## Install from GitHub Releases
+
+You can also install a packaged version from the **[GitHub Releases page](https://github.com/mrjoechen/webdav-image-saver/releases)**:
+
+1. Open the latest release and download `webdav-image-saver-v*.zip` from **Assets**.
+2. Extract the downloaded ZIP file to a permanent folder. Do not delete this folder after installation.
+3. Open `chrome://extensions` in Chrome.
+4. Enable **Developer mode** in the upper-right corner.
+5. Click **Load unpacked**.
+6. Select the extracted folder containing `manifest.json`.
+7. Click the extension icon to configure your WebDAV server.
+
+Extensions installed from GitHub Releases do not update automatically through the Chrome Web Store. To upgrade, download the ZIP from the newest release, replace the extracted files, and click **Reload** for WebDAV Image Saver on `chrome://extensions`.
+
+For automatic updates, install the extension from the Chrome Web Store instead.
 
 ## Features
 

@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Read and validate version
+        id: version
+        shell: bash
+        run: |
+          manifest_version="$(node -p "require('./manifest.json').version")"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            release_version="${GITHUB_REF_NAME#v}"
+            if [[ "$release_version" != "$manifest_version" ]]; then
+              echo "Tag version $release_version does not match manifest version $manifest_version." >&2
+              exit 1
+            fi
+          else
+            release_version="$manifest_version"
+          fi
+
+          echo "version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$release_version" >> "$GITHUB_OUTPUT"
+
+      - name: Run syntax checks
+        run: |
+          node --check background.js
+          node --check content_script.js
+          node --check options/options.js
+
+      - name: Check for remote executable resources
+        shell: bash
+        run: |
+          if grep -RInE 'fonts\.googleapis|gstatic|eval\(|new Function' \
+            manifest.json background.js content_script.js options assets; then
+            echo "Potential remote resource or dynamic code usage found." >&2
+            exit 1
+          fi
+
+      - name: Build extension package
+        id: package
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          package_name="webdav-image-saver-v${version}.zip"
+          staging_dir="$RUNNER_TEMP/webdav-image-saver"
+
+          mkdir -p "$staging_dir"
+          cp manifest.json background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md "$staging_dir/"
+          cp -R assets icons options "$staging_dir/"
+
+          (
+            cd "$staging_dir"
+            zip -X -r "$GITHUB_WORKSPACE/$package_name" .
+          )
+
+          echo "name=$package_name" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PACKAGE: ${{ steps.package.outputs.name }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$PACKAGE" --clobber
+          else
+            gh release create "$TAG" "$PACKAGE" \
+              --title "WebDAV Image Saver $TAG" \
+              --generate-notes \
+              --target "$GITHUB_SHA"
+          fi
