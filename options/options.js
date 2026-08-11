@@ -212,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function saveServer(serverData) {
     try {
-      // Use local storage for sensitive data like passwords
+      // Store all server configuration locally.
       const localData = await chrome.storage.local.get('webdavServers');
       const syncData = await chrome.storage.sync.get('webdavServers');
       
@@ -225,21 +225,8 @@ document.addEventListener('DOMContentLoaded', () => {
         servers.push(serverData);
       }
       
-      // Store sensitive data locally, sync non-sensitive metadata
       await chrome.storage.local.set({ webdavServers: servers });
-      
-      // Create a sanitized version for sync (without passwords)
-      const sanitizedServers = servers.map(server => ({
-        id: server.id,
-        name: server.name,
-        url: server.url,
-        username: server.username,
-        folder: server.folder
-        // Deliberately omit password for sync
-      }));
-      
-      await chrome.storage.sync.set({ webdavServersMetadata: sanitizedServers });
-      await chrome.storage.sync.remove('webdavServers');
+      await clearLegacySyncServerData();
       
       // Inform background script about the changes
       chrome.runtime.sendMessage({ action: 'configUpdated' });
@@ -505,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadServers() {
     try {
-      // Prefer local storage for complete data, fallback to sync for migration
+      // Prefer local storage, fallback to sync only for legacy migration.
       const localData = await chrome.storage.local.get('webdavServers');
       const syncData = await chrome.storage.sync.get('webdavServers');
       
@@ -522,8 +509,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (syncData.webdavServers && !localData.webdavServers) {
         console.log('Migrating server data to local storage for better security');
         await chrome.storage.local.set({ webdavServers: servers });
-        await chrome.storage.sync.remove('webdavServers');
       }
+
+      await clearLegacySyncServerData();
     } catch (error) {
       console.error('Error loading servers:', error);
       showNotification('Could not load server configurations.', 'error');
@@ -653,17 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       servers = servers.filter(s => s.id !== serverId);
       await chrome.storage.local.set({ webdavServers: servers });
-      
-      // Update metadata for sync as well
-      const sanitizedServers = servers.map(server => ({
-        id: server.id,
-        name: server.name,
-        url: server.url,
-        username: server.username,
-        folder: server.folder
-      }));
-      await chrome.storage.sync.set({ webdavServersMetadata: sanitizedServers });
-      await chrome.storage.sync.remove('webdavServers');
+      await clearLegacySyncServerData();
       
       await loadServers();
       showNotification('Deleted', 'success');
@@ -673,6 +651,14 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       console.error('Error deleting server:', error);
       showNotification('Could not delete server.', 'error');
+    }
+  }
+
+  async function clearLegacySyncServerData() {
+    try {
+      await chrome.storage.sync.remove(['webdavServers', 'webdavServersMetadata']);
+    } catch (error) {
+      console.warn('Could not clear legacy sync storage:', error);
     }
   }
 

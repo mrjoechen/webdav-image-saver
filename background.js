@@ -153,7 +153,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // --- Configuration Loading ---
 async function loadConfig() {
     try {
-        // Check local storage first (new secure storage), fallback to sync for migration
+        // Check local storage first, fallback to sync only for legacy migration.
         const localData = await chrome.storage.local.get('webdavServers');
         const syncData = await chrome.storage.sync.get('webdavServers');
         
@@ -164,11 +164,20 @@ async function loadConfig() {
         if (syncData.webdavServers && !localData.webdavServers) {
             console.log('Migrating server data to local storage for better security');
             await chrome.storage.local.set({ webdavServers: webdavServers });
-            await chrome.storage.sync.remove('webdavServers');
         }
+
+        await clearLegacySyncServerData();
     } catch (error) {
         console.error("Error loading configuration:", error);
         webdavServers = [];
+    }
+}
+
+async function clearLegacySyncServerData() {
+    try {
+        await chrome.storage.sync.remove(['webdavServers', 'webdavServersMetadata']);
+    } catch (error) {
+        console.warn('Could not clear legacy sync storage:', error);
     }
 }
 

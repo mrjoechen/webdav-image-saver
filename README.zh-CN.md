@@ -8,7 +8,7 @@
 
 通过 Chrome 右键菜单，将网页图片直接保存到你自己的 WebDAV 服务器。
 
-WebDAV Image Saver 是一个 Manifest V3 Chrome 扩展，适合将图片保存到 Nextcloud、ownCloud、Synology、QNAP 或其他 WebDAV 兼容存储的用户。它不使用托管后端服务。配置、图片获取、目录浏览和上传都在浏览器内完成。
+WebDAV Image Saver 是一个 Manifest V3 Chrome 扩展，适合将图片保存到 Nextcloud、ownCloud、Synology、QNAP 或其他 WebDAV 兼容存储的用户。它没有任何开发者运营的服务器或托管后端，不会收集、保存或向开发者传输你的图片、凭据、浏览数据或设置。配置、图片获取、目录浏览和上传都在浏览器内完成，扩展数据保存在 Chrome 本地扩展存储中。
 
 ## 从 Chrome Web Store 安装
 
@@ -23,14 +23,13 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 你也可以从 **[GitHub Releases 页面](https://github.com/mrjoechen/webdav-image-saver/releases)** 安装打包版本：
 
 1. 打开最新 release，并从 **Assets** 下载 `webdav-image-saver-v*.zip`。
-2. 将下载的 ZIP 解压到一个固定目录。安装后不要删除这个目录。
-3. 在 Chrome 中打开 `chrome://extensions`。
-4. 打开右上角的 **开发者模式**。
-5. 点击 **加载已解压的扩展程序**。
-6. 选择包含 `manifest.json` 的解压目录。
-7. 点击扩展图标配置你的 WebDAV 服务器。
+2. 在 Chrome 中打开 `chrome://extensions`。
+3. 打开右上角的 **开发者模式**。
+4. 将下载的 ZIP 文件直接拖到扩展程序页面进行安装。
+5. 如果当前浏览器不支持拖拽 ZIP 安装，也可以将 ZIP 解压到一个固定目录，点击 **加载已解压的扩展程序**，选择包含 `manifest.json` 的解压目录。
+6. 点击扩展图标配置你的 WebDAV 服务器。
 
-通过 GitHub Releases 安装的扩展不会通过 Chrome Web Store 自动更新。升级时，请从最新 release 下载 ZIP，替换已解压文件，然后在 `chrome://extensions` 中点击 WebDAV Image Saver 的 **重新加载**。
+通过 GitHub Releases 安装的扩展不会通过 Chrome Web Store 自动更新。升级时，请从最新 release 下载 ZIP 并重新安装；如果你使用的是解压目录安装，请替换已解压文件，然后在 `chrome://extensions` 中点击 WebDAV Image Saver 的 **重新加载**。
 
 如需自动更新，请改用 Chrome Web Store 安装。
 
@@ -91,9 +90,10 @@ image_YYYYMMDDHHMMSS_example_com.jpg
 
 ## 数据处理
 
-- WebDAV 配置存储在 `chrome.storage.local`。
-- 为兼容既有记录，会在 `chrome.storage.sync` 中保存一份不含密码的元数据副本。
-- 图片由浏览器直接获取并上传。
+- 扩展没有任何开发者运营的服务器或托管后端。
+- WebDAV 配置本地存储在 `chrome.storage.local`。
+- 图片由浏览器直接获取，并上传到你配置的 WebDAV 服务器。
+- 你的图片、凭据、浏览数据和设置不会被收集、保存或传输给开发者。
 - 不使用分析、跟踪、托管 API 或开发者运营的服务器。
 - 本扩展不会在应用层加密凭据。凭据依赖 Chrome 用户资料和操作系统存储保护。
 
@@ -152,9 +152,6 @@ zip -X -r webdav-image-saver.zip webdav-image-saver
 - 隐私政策 URL 可公开访问，并与实际行为一致。
 - 商店详情页中的声明与已实现功能一致。
 
-## 仓库
-
-GitHub: [mrjoechen/webdav-image-saver](https://github.com/mrjoechen/webdav-image-saver)
 
 ## 许可证
 
