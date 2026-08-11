@@ -1,16 +1,25 @@
-# WebDAV Image Saver
+<p align="center">
+  <img src="./icons/icon128.png" alt="webdav-image-saver" width="100" height="100"/>
+</p>
+<h1 align="center">WebDAV Image Saver</h1>
+<p align="center">
+  <a href="https://github.com/mrjoechen/webdav-image-saver/releases/latest"><img src="https://img.shields.io/github/downloads/mrjoechen/webdav-image-saver/total?style=flat" alt="Downloads"></a>
+  <a href="https://github.com/mrjoechen/webdav-image-saver/stargazers"><img src="https://img.shields.io/github/stars/mrjoechen/webdav-image-saver" alt="stars"></a>
+  <a href="https://ko-fi.com/joechen"><img src="https://img.shields.io/badge/ko--fi-Buy_me_a_coffee-ff5f5f?logo=ko-fi&style=for-the-badgeKo-fi" alt="ko-fi"></a>
+</p>
+<p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">中文</a>
+</p>
 
-[简体中文](README.zh-CN.md)
-
-☕ [Support this project on Ko-fi](https://ko-fi.com/joechen)
-
-<a href="https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep">
-  <img src="store-assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206">
-</a>
+## Overview
 
 Save web images directly to your own WebDAV server from Chrome's right-click menu.
 
 WebDAV Image Saver is a Manifest V3 Chrome extension for people who keep images in Nextcloud, ownCloud, Synology, QNAP, or any other WebDAV-compatible storage. It does not use any developer-operated server or hosted backend, and it does not collect, store, or transmit your images, credentials, browsing data, or settings to the developer. Configuration, image fetching, folder browsing, and uploads happen inside your browser, with extension data stored locally in Chrome's extension storage.
+
+<a href="https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep">
+  <img src="store-assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206">
+</a>
 
 ## Screenshots
 

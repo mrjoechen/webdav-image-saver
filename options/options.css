@@ -446,6 +446,13 @@ button {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
+.donation-logo {
+  display: block;
+  width: 23px;
+  height: 23px;
+  object-fit: contain;
+}
+
 .btn:disabled {
   opacity: 0.58;
   cursor: not-allowed;
