@@ -2,6 +2,8 @@
 
 [简体中文](README.zh-CN.md)
 
+☕ [Support this project on Ko-fi](https://ko-fi.com/joechen)
+
 <a href="https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep">
   <img src="store-assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206">
 </a>
@@ -9,6 +11,27 @@
 Save web images directly to your own WebDAV server from Chrome's right-click menu.
 
 WebDAV Image Saver is a Manifest V3 Chrome extension for people who keep images in Nextcloud, ownCloud, Synology, QNAP, or any other WebDAV-compatible storage. It does not use any developer-operated server or hosted backend, and it does not collect, store, or transmit your images, credentials, browsing data, or settings to the developer. Configuration, image fetching, folder browsing, and uploads happen inside your browser, with extension data stored locally in Chrome's extension storage.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/servers-overview.jpg" alt="Configured WebDAV servers" width="100%">
+      <br><sub>Manage configured WebDAV</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/add-server-dialog.jpg" alt="Add a WebDAV server" width="100%">
+      <br><sub>Add and test a WebDAV server</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/context-menu-destination.jpg" alt="Choose a WebDAV destination from the image context menu" width="100%">
+      <br><sub>Choose a destination from the image context menu</sub>
+    </td>
+  </tr>
+</table>
 
 ## Install from the Chrome Web Store
 

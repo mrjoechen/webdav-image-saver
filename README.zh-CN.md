@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+☕ [在 Ko-fi 上支持这个项目](https://ko-fi.com/joechen)
+
 <a href="https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep">
   <img src="store-assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206">
 </a>
@@ -9,6 +11,31 @@
 通过 Chrome 右键菜单，将网页图片直接保存到你自己的 WebDAV 服务器。
 
 WebDAV Image Saver 是一个 Manifest V3 Chrome 扩展，适合将图片保存到 Nextcloud、ownCloud、Synology、QNAP 或其他 WebDAV 兼容存储的用户。它没有任何开发者运营的服务器或托管后端，不会收集、保存或向开发者传输你的图片、凭据、浏览数据或设置。配置、图片获取、目录浏览和上传都在浏览器内完成，扩展数据保存在 Chrome 本地扩展存储中。
+
+## 界面截图
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/servers-overview.jpg" alt="已配置的 WebDAV 服务器" width="100%">
+      <br><sub>管理已配置的 WebDAV 服务器</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/add-server-dialog.jpg" alt="添加 WebDAV 服务器" width="100%">
+      <br><sub>添加并测试 WebDAV 服务器</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/context-menu-destination.jpg" alt="从图片右键菜单选择 WebDAV 目标位置" width="100%">
+      <br><sub>从图片右键菜单选择目标位置</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/context-menu-entry.png" alt="保存图片到 WebDAV 右键菜单入口" width="50%">
+      <br><sub>从右键菜单打开 WebDAV Image Saver</sub>
+    </td>
+  </tr>
+</table>
 
 ## 从 Chrome Web Store 安装
 
