@@ -11,6 +11,10 @@
   <b>English</b> | <a href="README.zh-CN.md">中文</a>
 </p>
 
+<p align="center">
+   <img src="docs/cover-eng-intro-1.png" alt="WebDAV Image Saver" width="560">
+</p>
+
 ## Overview
 
 Save web images directly to your own WebDAV server from Chrome's right-click menu.
