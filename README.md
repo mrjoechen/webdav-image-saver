@@ -75,6 +75,8 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 - Configure multiple WebDAV servers.
 - Test WebDAV connectivity before saving.
 - Browse multi-level WebDAV folders and choose a target folder.
+- Save original images, ask for a format each time, or convert static images to PNG, JPG, or WebP.
+- Preserve animated and unsupported images in their original format with a visible warning.
 - Show a short countdown bubble before upload, with a cancel action.
 - Open the settings page from the extension toolbar icon.
 - Light/dark monochrome settings UI with packaged SVG icons.
@@ -107,7 +109,12 @@ Use HTTPS WebDAV URLs whenever possible. HTTP may work technically, but it sends
 1. Right-click an image on a web page.
 2. Choose **Save Image to WebDAV**.
 3. Pick the configured server destination.
-4. Wait for the countdown or click **Cancel**.
+4. If **Ask every time** is enabled, choose **Original**, **PNG**, **JPG**, or **WebP** in the page prompt.
+5. Wait for the countdown or click **Cancel**.
+
+Use the settings button in the options page header to choose the global image format preference. PNG conversion is lossless. JPG and WebP use quality `0.92`; transparent areas are filled white when converting to JPG. Animated GIF, APNG, animated WebP, and images the browser cannot convert are uploaded unchanged and reported with a warning.
+
+All detection and conversion runs locally in the browser. No hosted conversion service is used.
 
 The extension generates filenames like:
 
@@ -140,6 +147,9 @@ See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 Run syntax checks before packaging:
 
 ```bash
+node --test
+node --check image-format.js
+node --check settings.js
 node --check background.js
 node --check content_script.js
 node --check options/options.js
@@ -148,7 +158,7 @@ node --check options/options.js
 Check for remote resources before Chrome Web Store submission:
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js settings.js background.js content_script.js options assets
 ```
 
 The options page should use only packaged files and inline SVG symbols. Do not add remotely hosted scripts, styles, fonts, or icon fonts.
@@ -159,6 +169,8 @@ Recommended package contents:
 
 ```text
 manifest.json
+image-format.js
+settings.js
 background.js
 content_script.js
 assets/
@@ -174,7 +186,7 @@ Manual packaging example:
 
 ```bash
 mkdir -p dist/webdav-image-saver
-cp manifest.json background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
+cp manifest.json image-format.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
 cp -R assets icons options dist/webdav-image-saver/
 cd dist
 zip -X -r webdav-image-saver.zip webdav-image-saver

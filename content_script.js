@@ -3,6 +3,109 @@
 (() => {
     // Use an object to keep track of active countdowns/bubbles by their unique ID
     const activeBubbles = {};
+    const activeFormatChoosers = {};
+
+    function sendRuntimeMessage(message, onFailure) {
+      chrome.runtime.sendMessage(message).catch(error => {
+        console.error(`Failed to send ${message.action}:`, error);
+        onFailure?.(error);
+      });
+    }
+
+    function showFormatChooser(id, serverName) {
+      removeFormatChooser(id);
+      const previousFocus = document.activeElement;
+
+      const chooser = document.createElement('section');
+      chooser.id = `webdav-format-chooser-${id}`;
+      chooser.className = 'webdav-format-chooser';
+      chooser.setAttribute('role', 'dialog');
+      chooser.setAttribute('aria-modal', 'false');
+      chooser.setAttribute('aria-labelledby', `webdav-format-title-${id}`);
+
+      const title = document.createElement('p');
+      title.id = `webdav-format-title-${id}`;
+      title.className = 'webdav-format-chooser-title';
+      title.textContent = `Save image to “${serverName}” as`;
+      chooser.appendChild(title);
+
+      const options = document.createElement('div');
+      options.className = 'webdav-format-options';
+      [
+        ['original', 'Original'],
+        ['png', 'PNG'],
+        ['jpg', 'JPG'],
+        ['webp', 'WebP']
+      ].forEach(([format, label]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'webdav-format-option';
+        button.dataset.format = format;
+        button.textContent = label;
+        button.addEventListener('click', () => {
+          removeFormatChooser(id);
+          sendRuntimeMessage(
+            { action: 'formatSelected', uploadId: id, format },
+            () => showStatusBubble('error', 'Could not start the upload. Please try again.')
+          );
+        });
+        options.appendChild(button);
+      });
+      chooser.appendChild(options);
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'webdav-format-cancel';
+      cancelButton.textContent = 'Cancel';
+      chooser.appendChild(cancelButton);
+
+      const cancelSelection = () => {
+        removeFormatChooser(id);
+        sendRuntimeMessage({ action: 'cancelFormatSelection', uploadId: id });
+      };
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          cancelSelection();
+          return;
+        }
+
+        if (event.key !== 'Tab') return;
+        const focusableElements = [...chooser.querySelectorAll('button:not(:disabled)')];
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (event.shiftKey && document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        } else if (!event.shiftKey && document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      };
+
+      cancelButton.addEventListener('click', cancelSelection);
+      document.addEventListener('keydown', handleKeydown);
+      document.body.appendChild(chooser);
+
+      activeFormatChoosers[id] = {
+        element: chooser,
+        handleKeydown,
+        previousFocus
+      };
+      chooser.querySelector('.webdav-format-option')?.focus();
+    }
+
+    function removeFormatChooser(id) {
+      const chooser = activeFormatChoosers[id];
+      if (!chooser) return;
+
+      document.removeEventListener('keydown', chooser.handleKeydown);
+      chooser.element.remove();
+      delete activeFormatChoosers[id];
+      if (chooser.previousFocus instanceof HTMLElement && chooser.previousFocus.isConnected) {
+        chooser.previousFocus.focus();
+      }
+    }
   
     // Function to create or update the countdown bubble
     function showCountdownBubble(id, serverName, initialSeconds) {
@@ -33,15 +136,22 @@
         }
         if (secondsRemaining <= 0) {
           clearInterval(intervalId);
-          // Don't remove the bubble here, background script will tell us when
+          cancelButton.disabled = true;
+          cancelButton.textContent = 'Uploading...';
+          sendRuntimeMessage(
+            { action: 'uploadCountdownComplete', uploadId: id },
+            () => {
+              removeBubble(id);
+              showStatusBubble('error', 'Could not start the upload. Please try again.');
+            }
+          );
         }
       }, 1000);
   
       // Cancel button listener
       cancelButton.addEventListener('click', () => {
         console.log('Cancel clicked for ID:', id);
-        // Send message to background to cancel the actual upload timer
-        chrome.runtime.sendMessage({ action: 'cancelUpload', uploadId: id });
+        sendRuntimeMessage({ action: 'cancelUpload', uploadId: id });
         // Immediately remove this bubble
         removeBubble(id);
       });
@@ -87,10 +197,13 @@
         return true;
       } else if (message.action === 'showCountdownBubble') {
         showCountdownBubble(message.uploadId, message.serverName, message.countdownSeconds);
+      } else if (message.action === 'showFormatChooser') {
+        showFormatChooser(message.uploadId, message.serverName);
       } else if (message.action === 'removeCountdownBubble') {
         removeBubble(message.uploadId);
       } else if (message.action === 'showStatusBubble') {
          removeBubble(message.uploadId); // Ensure countdown bubble is gone first
+         removeFormatChooser(message.uploadId);
          showStatusBubble(message.status, message.message);
       }
       // Indicate that the response function will not be called (or will be called asynchronously)

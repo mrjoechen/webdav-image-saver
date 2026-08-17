@@ -76,6 +76,8 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 - 支持配置多个 WebDAV 服务器。
 - 保存前可测试 WebDAV 连接。
 - 支持浏览多级 WebDAV 目录并选择目标文件夹。
+- 支持保留原图、每次保存前选择格式，或将静态图片转换为 PNG、JPG、WebP。
+- 动图和浏览器不支持转换的图片会保留原格式，并显示明确提示。
 - 上传前显示短暂倒计时气泡，并支持取消。
 - 可从扩展工具栏图标打开设置页面。
 - 使用随包提供的 SVG 图标，设置界面支持浅色/深色单色主题。
@@ -108,7 +110,12 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 1. 在网页图片上点击右键。
 2. 选择 **Save Image to WebDAV**。
 3. 选择已配置的服务器目标位置。
-4. 等待倒计时结束，或点击 **Cancel** 取消。
+4. 如果启用了 **Ask every time**，在网页提示中选择 **Original**、**PNG**、**JPG** 或 **WebP**。
+5. 等待倒计时结束，或点击 **Cancel** 取消。
+
+可通过设置页顶部的设置按钮选择全局图片格式。PNG 使用无损转换；JPG 和 WebP 的质量为 `0.92`；转换为 JPG 时，透明区域会填充为白色。GIF、APNG、动画 WebP 以及浏览器无法转换的图片会保持原文件不变，并显示提示。
+
+格式识别和转换都在浏览器本地完成，不使用任何在线转换服务。
 
 扩展会生成类似下面的文件名：
 
@@ -141,6 +148,9 @@ image_YYYYMMDDHHMMSS_example_com.jpg
 打包前运行语法检查：
 
 ```bash
+node --test
+node --check image-format.js
+node --check settings.js
 node --check background.js
 node --check content_script.js
 node --check options/options.js
@@ -149,7 +159,7 @@ node --check options/options.js
 提交 Chrome Web Store 前检查远程资源：
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js settings.js background.js content_script.js options assets
 ```
 
 设置页面应只使用随包提供的文件和内联 SVG symbols。不要添加远程托管的脚本、样式、字体或图标字体。
@@ -160,6 +170,8 @@ rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.jso
 
 ```text
 manifest.json
+image-format.js
+settings.js
 background.js
 content_script.js
 assets/
@@ -175,7 +187,7 @@ STORE_DESCRIPTION.md
 
 ```bash
 mkdir -p dist/webdav-image-saver
-cp manifest.json background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
+cp manifest.json image-format.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
 cp -R assets icons options dist/webdav-image-saver/
 cd dist
 zip -X -r webdav-image-saver.zip webdav-image-saver

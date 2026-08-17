@@ -1,130 +1,273 @@
+importScripts('image-format.js');
+importScripts('settings.js');
+
 // Store configurations in memory for quick access
 let webdavServers = [];
-let uploadTimers = {}; // Store notification IDs and their timeouts
+let appSettings = AppSettings.createDefaultSettings();
+let configReady;
+let configReloadQueue = Promise.resolve();
+const PENDING_UPLOAD_PREFIX = 'pendingUpload_';
+const processingUploadIds = new Set();
+const contentScriptInjectionPromises = new Map();
 
 // --- Initialization ---
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(() => {
     console.log("WebDAV Image Saver installed/updated.");
-    await loadConfig();
-    createContextMenus();
 });
 
 // --- Context Menu Click Handler ---
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    await configReady;
     const serverConfig = webdavServers.find(s => s.id === info.menuItemId);
 
-    if (serverConfig && info.srcUrl && tab && tab.id) {
+    if (serverConfig && info.srcUrl && tab && Number.isInteger(tab.id)) {
         console.log(`Preparing image ${info.srcUrl} for ${serverConfig.name}`);
-
-        // 1. Generate a unique ID for this upload attempt
-        const uploadId = `upload_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
-        const countdownSeconds = 3;
-
-        // 2. Inject Content Script and CSS if not already there
         try {
-            // Check if content script is already injected by trying to send a ping message
-            let scriptAlreadyInjected = false;
-            try {
-                await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
-                scriptAlreadyInjected = true;
-                console.log("Content script already injected for tab:", tab.id);
-            } catch (e) {
-                console.log("Content script not present, will inject for tab:", tab.id);
-            }
-
-            // Only inject if not already present
-            if (!scriptAlreadyInjected) {
-                await chrome.scripting.insertCSS({
-                    target: { tabId: tab.id },
-                    files: ['assets/bubble.css']
-                });
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content_script.js']
-                });
-                console.log("Injected content script and CSS for tab:", tab.id);
-            }
-
-            // 3. Send message to Content Script to show the bubble
-            await chrome.tabs.sendMessage(tab.id, {
-                action: 'showCountdownBubble',
-                uploadId: uploadId,
-                serverName: serverConfig.name,
-                countdownSeconds: countdownSeconds
+            await beginSaveFlow({
+                serverConfig,
+                imageUrl: info.srcUrl,
+                pageUrl: info.pageUrl || tab.url,
+                tabId: tab.id
             });
-            console.log("Sent showCountdownBubble message for ID:", uploadId);
-
-            // 4. Start the background timer for the actual upload
-            const timerId = setTimeout(() => {
-                console.log(`Background timer expired for ${uploadId}. Starting upload.`);
-                // Check if it wasn't cancelled in the meantime
-                if (uploadTimers[uploadId]) {
-                    const { serverConfig, imageUrl, pageUrl } = uploadTimers[uploadId];
-                    // Remove the timer *before* starting the upload
-                    delete uploadTimers[uploadId];
-                    // Tell content script to remove the countdown bubble explicitly
-                    chrome.tabs.sendMessage(tab.id, { action: 'removeCountdownBubble', uploadId: uploadId }).catch(e => console.warn("Failed to send remove message", e));
-                    // Perform the upload
-                    uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tab.id);
-                } else {
-                     console.log(`Upload ${uploadId} was cancelled before timer expired.`);
-                }
-            }, countdownSeconds * 1000);
-
-            // 5. Store timer details associated with the ID
-            uploadTimers[uploadId] = { timerId, serverConfig, imageUrl: info.srcUrl, pageUrl: info.pageUrl || tab.url }; // Use info.pageUrl if available, else tab.url
-
         } catch (error) {
-            console.error(`Failed to inject script/CSS or send message to tab ${tab.id}:`, error);
-            // Fallback or error notification? For now, just log.
-            // Maybe show a generic error status bubble immediately if injection fails?
-            try {
-                 await chrome.tabs.sendMessage(tab.id, {
-                      action: 'showStatusBubble',
-                      uploadId: uploadId, // Still useful for potential removal
-                      status: 'error',
-                      message: `Error preparing upload: ${error.message}`
-                  });
-            } catch (sendError) {
-                 console.error("Also failed to send error status message:", sendError);
-            }
+            console.error(`Failed to prepare upload in tab ${tab.id}:`, error);
         }
-
     } else {
-        // Handle cases where config/URL/tab is missing
         console.warn("Context menu click ignored:", { hasConfig: !!serverConfig, hasSrcUrl: !!info.srcUrl, hasTabId: !!(tab && tab.id) });
     }
 });
+
+async function ensureContentScript(tabId) {
+    if (contentScriptInjectionPromises.has(tabId)) {
+        return contentScriptInjectionPromises.get(tabId);
+    }
+
+    const injectionPromise = (async () => {
+        try {
+            await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+            return;
+        } catch (error) {
+            console.log('Content script not present, injecting for tab:', tabId);
+        }
+
+        await chrome.scripting.insertCSS({
+            target: { tabId },
+            files: ['assets/bubble.css']
+        });
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content_script.js']
+        });
+    })();
+
+    contentScriptInjectionPromises.set(tabId, injectionPromise);
+    try {
+        await injectionPromise;
+    } finally {
+        contentScriptInjectionPromises.delete(tabId);
+    }
+}
+
+async function beginSaveFlow({ serverConfig, imageUrl, pageUrl, tabId }) {
+    const uploadId = `upload_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
+    const operation = {
+        uploadId,
+        serverId: serverConfig.id,
+        serverName: serverConfig.name,
+        imageUrl,
+        pageUrl,
+        tabId
+    };
+
+    await ensureContentScript(tabId);
+
+    if (appSettings.image.saveFormat === 'ask') {
+        await savePendingUpload(operation);
+        try {
+            await chrome.tabs.sendMessage(tabId, {
+                action: 'showFormatChooser',
+                uploadId,
+                serverName: operation.serverName
+            });
+        } catch (error) {
+            await removePendingUpload(uploadId);
+            throw error;
+        }
+        return;
+    }
+
+    await startUploadCountdown(operation, appSettings.image.saveFormat);
+}
+
+async function startUploadCountdown(operation, targetFormat) {
+    const countdownSeconds = 3;
+    const pendingUpload = { ...operation, targetFormat };
+
+    await savePendingUpload(pendingUpload);
+
+    try {
+        await chrome.tabs.sendMessage(operation.tabId, {
+            action: 'showCountdownBubble',
+            uploadId: operation.uploadId,
+            serverName: operation.serverName,
+            countdownSeconds
+        });
+    } catch (error) {
+        await removePendingUpload(operation.uploadId);
+        throw error;
+    }
+}
+
+function pendingUploadKey(uploadId) {
+    return `${PENDING_UPLOAD_PREFIX}${uploadId}`;
+}
+
+async function savePendingUpload(operation) {
+    await chrome.storage.session.set({ [pendingUploadKey(operation.uploadId)]: operation });
+}
+
+async function getPendingUpload(uploadId) {
+    const key = pendingUploadKey(uploadId);
+    const data = await chrome.storage.session.get(key);
+    return data[key] || null;
+}
+
+async function removePendingUpload(uploadId) {
+    await chrome.storage.session.remove(pendingUploadKey(uploadId));
+}
+
+async function removePendingUploadsForTab(tabId) {
+    const sessionData = await chrome.storage.session.get(null);
+    const keys = Object.entries(sessionData)
+        .filter(([key, operation]) => key.startsWith(PENDING_UPLOAD_PREFIX) && operation?.tabId === tabId)
+        .map(([key]) => key);
+
+    if (keys.length > 0) await chrome.storage.session.remove(keys);
+}
+
+async function cancelPendingUpload(uploadId, tabId) {
+    if (processingUploadIds.has(uploadId)) return;
+    processingUploadIds.add(uploadId);
+
+    try {
+        const operation = await getPendingUpload(uploadId);
+        if (!operation || operation.tabId !== tabId) return;
+        await removePendingUpload(uploadId);
+    } finally {
+        processingUploadIds.delete(uploadId);
+    }
+}
+
+async function handleFormatSelected(message, tabId) {
+    if (processingUploadIds.has(message.uploadId)) return;
+    processingUploadIds.add(message.uploadId);
+
+    try {
+        const operation = await getPendingUpload(message.uploadId);
+        const allowedFormats = ['original', 'png', 'jpg', 'webp'];
+
+        if (!operation || operation.tabId !== tabId || operation.targetFormat || !allowedFormats.includes(message.format)) {
+            console.warn('Ignored invalid image format selection:', message.format);
+            return;
+        }
+
+        await startUploadCountdown(operation, message.format);
+    } finally {
+        processingUploadIds.delete(message.uploadId);
+    }
+}
+
+async function handleUploadCountdownComplete(uploadId, tabId) {
+    if (processingUploadIds.has(uploadId)) return;
+    processingUploadIds.add(uploadId);
+
+    try {
+        const operation = await getPendingUpload(uploadId);
+        const allowedFormats = ['original', 'png', 'jpg', 'webp'];
+        if (!operation || operation.tabId !== tabId || !allowedFormats.includes(operation.targetFormat)) return;
+
+        await removePendingUpload(uploadId);
+        await configReady;
+
+        const serverConfig = webdavServers.find(server => server.id === operation.serverId);
+        if (!serverConfig) {
+            throw new Error('The selected WebDAV server is no longer available.');
+        }
+
+        await chrome.tabs.sendMessage(tabId, { action: 'removeCountdownBubble', uploadId })
+            .catch(error => console.warn('Failed to remove countdown bubble:', error));
+        await uploadImage(
+            operation.imageUrl,
+            operation.pageUrl,
+            serverConfig,
+            uploadId,
+            tabId,
+            operation.targetFormat
+        );
+    } finally {
+        processingUploadIds.delete(uploadId);
+    }
+}
 
 chrome.action.onClicked.addListener(() => {
     chrome.runtime.openOptionsPage();
 });
 
+chrome.tabs.onRemoved.addListener(tabId => {
+    removePendingUploadsForTab(tabId)
+        .catch(error => console.warn('Failed to clean up pending uploads for closed tab:', error));
+});
+
+function keepMessageChannelOpen(task, sendResponse) {
+    Promise.resolve(task)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => {
+            console.error('Background message task failed:', error);
+            sendResponse({ success: false, error: error.message || String(error) });
+        });
+    return true;
+}
 
 // --- Listen for Cancellation from Content Script ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Make sure to handle other messages too (like testWebdav, configUpdated)
     if (message.action === 'cancelUpload') {
-        const uploadId = message.uploadId;
-        console.log(`Received cancel request for upload ID: ${uploadId}`);
-        if (uploadTimers[uploadId]) {
-            clearTimeout(uploadTimers[uploadId].timerId);
-            delete uploadTimers[uploadId];
-            console.log(`Cancelled timer and removed tracking for ${uploadId}`);
-            // No need to tell content script to remove bubble, it already did.
-            // Optionally show a cancellation status bubble:
-            if (sender.tab && sender.tab.id) {
-                chrome.tabs.sendMessage(sender.tab.id, {
-                   action: 'showStatusBubble',
-                   uploadId: uploadId, // ID for context, though bubble is gone
-                   status: 'error', // Or maybe a neutral 'info' status? Let's use error styling.
-                   message: 'Upload cancelled.'
-                }).catch(e => console.warn("Failed to send cancel status message", e));
-            }
-        } else {
-            console.log(`Received cancel for ${uploadId}, but it was not found (already finished or cancelled).`);
-        }
-        return false; // Indicate sync processing
+        return keepMessageChannelOpen(
+            cancelPendingUpload(message.uploadId, sender.tab?.id),
+            sendResponse
+        );
+    }
+    else if (message.action === 'formatSelected') {
+        const selectionTask = handleFormatSelected(message, sender.tab?.id).catch(async error => {
+            if (!sender.tab?.id) return;
+            await chrome.tabs.sendMessage(sender.tab.id, {
+                action: 'showStatusBubble',
+                uploadId: message.uploadId,
+                status: 'error',
+                message: `Error preparing upload: ${error.message}`
+            }).catch(sendError => console.error('Failed to show format selection error:', sendError));
+            throw error;
+        });
+        return keepMessageChannelOpen(selectionTask, sendResponse);
+    }
+    else if (message.action === 'cancelFormatSelection') {
+        return keepMessageChannelOpen(
+            cancelPendingUpload(message.uploadId, sender.tab?.id),
+            sendResponse
+        );
+    }
+    else if (message.action === 'uploadCountdownComplete') {
+        const uploadTask = handleUploadCountdownComplete(message.uploadId, sender.tab?.id).catch(async error => {
+            if (!sender.tab?.id) return;
+            await chrome.tabs.sendMessage(sender.tab.id, {
+                action: 'showStatusBubble',
+                uploadId: message.uploadId,
+                status: 'error',
+                message: `Failed: ${error.message}`
+            }).catch(sendError => console.error('Failed to show upload error:', sendError));
+            throw error;
+        });
+        return keepMessageChannelOpen(uploadTask, sendResponse);
     }
     // --- Keep other message handlers ---
     else if (message.action === 'testWebdav') {
@@ -139,12 +282,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; // Async response
     } else if (message.action === 'configUpdated') {
         console.log('Configuration updated, reloading...');
-        loadConfig().then(() => {
-             createContextMenus();
-              // Reset any pending timers? Maybe not necessary, let them run with old config? Or clear uploadTimers = {}; ?
-             console.log("Menus updated after config change.");
+        const reloadTask = configReloadQueue.then(loadConfig);
+        configReloadQueue = reloadTask.catch(error => {
+            console.error('Configuration reload failed:', error);
         });
-        return false; // Sync processing
+        configReady = configReloadQueue;
+        const menuUpdateTask = reloadTask.then(() => {
+            createContextMenus();
+            console.log("Menus updated after config change.");
+        });
+        return keepMessageChannelOpen(menuUpdateTask, sendResponse);
     }
      return false; // Default for unhandled messages
 });
@@ -154,10 +301,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function loadConfig() {
     try {
         // Check local storage first, fallback to sync only for legacy migration.
-        const localData = await chrome.storage.local.get('webdavServers');
-        const syncData = await chrome.storage.sync.get('webdavServers');
+        const [localData, syncData, loadedSettings] = await Promise.all([
+            chrome.storage.local.get('webdavServers'),
+            chrome.storage.sync.get('webdavServers'),
+            AppSettings.loadSettings(chrome.storage.local)
+        ]);
         
         webdavServers = localData.webdavServers || syncData.webdavServers || [];
+        appSettings = loadedSettings;
         console.log("Configuration loaded:", webdavServers.length, "servers");
         
         // Migrate from sync to local if needed
@@ -170,6 +321,8 @@ async function loadConfig() {
     } catch (error) {
         console.error("Error loading configuration:", error);
         webdavServers = [];
+        appSettings = AppSettings.createDefaultSettings();
+        throw error;
     }
 }
 
@@ -226,42 +379,48 @@ function createContextMenus() {
 
 
 // --- Image Upload Logic ---
-async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId) {
+async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId, targetFormat = 'original') {
     let success = false;
+    let status = 'error';
     let statusMessage = '';
-    let filename = ''; // Keep filename accessible
+    let filename = '';
 
     try {
-        // 1. Generate Filename
-        filename = generateFilename(imageUrl, pageUrl); // Keep using original function
-        if (!filename) throw new Error("Could not generate filename.");
-
-        // 2. Fetch Image Data (as before)
         console.log(`[${uploadId}] Fetching image: ${imageUrl}`);
         const response = await fetch(imageUrl);
         if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
         const imageBlob = await response.blob();
         console.log(`[${uploadId}] Image fetched: ${imageBlob.size} bytes, type: ${imageBlob.type}`);
 
-        // 3. Construct WebDAV URL (as before)
-        const targetUrl = buildWebdavResourceUrl(serverConfig.url, serverConfig.folder || '/', filename);
+        filename = generateFilename(imageUrl, pageUrl, imageBlob.type);
+        const preparedImage = await ImageFormat.prepareImageForUpload({
+            blob: imageBlob,
+            filename,
+            targetFormat
+        });
+        filename = preparedImage.filename;
+        if (preparedImage.warningDetail) {
+            console.warn(`[${uploadId}] Image conversion fallback:`, preparedImage.warningDetail);
+        }
+
+        const targetUrl = buildWebdavResourceUrl(serverConfig.url, serverConfig.folder || '/', preparedImage.filename);
         console.log(`[${uploadId}] Target WebDAV URL: ${targetUrl}`);
 
-        // 4. Prepare Headers (as before)
         const headers = new Headers();
         headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
-        headers.append('Content-Type', imageBlob.type || 'application/octet-stream');
+        headers.append('Content-Type', preparedImage.mimeType);
 
-        // 5. Perform PUT request (as before)
         console.log(`[${uploadId}] Sending PUT request...`);
-        const putResponse = await fetch(targetUrl, { method: 'PUT', headers: headers, body: imageBlob });
+        const putResponse = await fetch(targetUrl, { method: 'PUT', headers: headers, body: preparedImage.blob });
         console.log(`[${uploadId}] WebDAV response status: ${putResponse.status}`);
 
-        // 6. Check Response (as before, maybe refine error parsing)
         if (putResponse.ok || putResponse.status === 201 || putResponse.status === 204) {
             console.log(`[${uploadId}] Image uploaded successfully!`);
             success = true;
-            statusMessage = `Saved as "${filename}"`; // Shorter success message for bubble
+            status = preparedImage.warningCode ? 'warning' : 'success';
+            statusMessage = preparedImage.warningCode
+                ? getConversionWarningMessage(preparedImage)
+                : `Saved as "${filename}"`;
         } else {
              let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
              try {
@@ -277,31 +436,44 @@ async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId) {
     } catch (error) {
         console.error(`[${uploadId}] Upload process failed:`, error);
         success = false;
+        status = 'error';
         statusMessage = `Failed: ${error.message}`;
     }
 
-    // 7. Send result message back to content script
-    // In background.js, add more verbose logging
     chrome.tabs.sendMessage(tabId, {
         action: 'showStatusBubble',
         uploadId: uploadId,
-        status: success ? 'success' : 'error',
+        status: success ? status : 'error',
         message: statusMessage
     }).then(() => {
         console.log(`[${uploadId}] Successfully sent status message to tab ${tabId}`);
     }).catch(e => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, e));
     }
 
+function getConversionWarningMessage(preparedImage) {
+    const filenameExtension = preparedImage.filename.includes('.')
+        ? preparedImage.filename.split('.').pop()
+        : '';
+    const mimeSubtype = preparedImage.mimeType.includes('/')
+        ? preparedImage.mimeType.split('/').pop().split('+')[0]
+        : '';
+    const originalFormat = (filenameExtension || mimeSubtype || 'image').toUpperCase();
+    if (preparedImage.warningCode === 'animated-image') {
+        return `Saved original ${originalFormat}; animated images cannot be converted.`;
+    }
+    return `Saved original ${originalFormat}; this image could not be converted.`;
+}
+
 // --- Filename Generation ---
-function generateFilename(imageUrl, pageUrl) {
+function generateFilename(imageUrl, pageUrl, mimeType = '') {
     try {
         const url = new URL(imageUrl);
         const page = new URL(pageUrl); // Use pageUrl for hostname
 
-        // Get file extension
         const pathname = url.pathname;
         const lastDot = pathname.lastIndexOf('.');
-        const extension = (lastDot > -1) ? pathname.substring(lastDot + 1).toLowerCase() : 'jpg'; // Default to jpg if no extension
+        const urlExtension = lastDot > pathname.lastIndexOf('/') ? pathname.substring(lastDot + 1) : 'bin';
+        const extension = ImageFormat.extensionForMimeType(mimeType, urlExtension);
 
         // Get date timestamp YYYYMMDDHHMMSS
         const now = new Date();
@@ -318,10 +490,9 @@ function generateFilename(imageUrl, pageUrl) {
         return `image_${timestamp}_${hostname}.${extension}`;
     } catch (e) {
         console.error("Error generating filename:", e);
-        // Fallback filename
         const timestamp = Date.now();
-        const fallbackExt = imageUrl.split('.').pop() || 'jpg';
-         return `image_${timestamp}_fallback.${fallbackExt}`;
+        const fallbackExt = ImageFormat.extensionForMimeType(mimeType, 'bin');
+        return `image_${timestamp}_fallback.${fallbackExt}`;
     }
 }
 
@@ -522,4 +693,8 @@ function getWebdavParentFolder(folder) {
 }
 
 // --- Initial load and menu creation on startup ---
-loadConfig().then(createContextMenus);
+configReady = loadConfig().catch(error => {
+    console.error('Initial configuration load failed:', error);
+});
+configReloadQueue = configReady;
+configReady.then(createContextMenus);

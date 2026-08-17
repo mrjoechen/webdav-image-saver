@@ -6,6 +6,17 @@ document.addEventListener('DOMContentLoaded', () => {
     serverList: document.getElementById('server-list'),
     addServerBtn: document.getElementById('add-server-btn'),
     addFirstServerBtn: document.getElementById('add-first-server-btn'),
+    imageFormatSettingsBtn: document.getElementById('image-format-settings-btn'),
+    imageFormatModal: document.getElementById('image-format-modal'),
+    imageFormatForm: document.getElementById('image-format-form'),
+    imageFormatPreference: document.getElementById('image-format-preference'),
+    imageFormatSelect: document.getElementById('image-format-select'),
+    imageFormatTrigger: document.getElementById('image-format-trigger'),
+    imageFormatValue: document.getElementById('image-format-value'),
+    imageFormatOptions: document.getElementById('image-format-options'),
+    closeImageFormatBtn: document.getElementById('close-image-format-btn'),
+    cancelImageFormatBtn: document.getElementById('cancel-image-format-btn'),
+    saveImageFormatBtn: document.getElementById('save-image-format-btn'),
     themeToggleBtn: document.getElementById('theme-toggle-btn'),
     themeToggleIcon: document.getElementById('theme-toggle-icon'),
     modal: document.getElementById('server-modal'),
@@ -44,6 +55,15 @@ document.addEventListener('DOMContentLoaded', () => {
     currentPath: '/',
     selectedPath: '/'
   };
+  const imageFormatOptionElements = [...document.querySelectorAll('.format-select-option')];
+  const imageFormatLabels = {
+    original: 'Original',
+    ask: 'Ask every time',
+    png: 'PNG',
+    jpg: 'JPG',
+    webp: 'WebP'
+  };
+  let imageFormatPreference = 'original';
 
   // Initialize the app
   init();
@@ -51,13 +71,23 @@ document.addEventListener('DOMContentLoaded', () => {
   async function init() {
     initTheme();
     attachEventListeners();
-    await loadServers();
+    await Promise.all([loadServers(), loadImageFormatPreference()]);
   }
 
   function attachEventListeners() {
     // Modal controls
     elements.addServerBtn?.addEventListener('click', () => openModal());
     elements.addFirstServerBtn?.addEventListener('click', () => openModal());
+    elements.imageFormatSettingsBtn?.addEventListener('click', openImageFormatModal);
+    elements.imageFormatForm?.addEventListener('submit', saveImageFormatPreference);
+    elements.imageFormatTrigger?.addEventListener('click', toggleImageFormatSelect);
+    elements.imageFormatTrigger?.addEventListener('keydown', handleImageFormatTriggerKeydown);
+    imageFormatOptionElements.forEach((option, index) => {
+      option.addEventListener('click', () => selectImageFormat(option.dataset.value));
+      option.addEventListener('keydown', event => handleImageFormatOptionKeydown(event, index));
+    });
+    elements.closeImageFormatBtn?.addEventListener('click', closeImageFormatModal);
+    elements.cancelImageFormatBtn?.addEventListener('click', closeImageFormatModal);
     elements.themeToggleBtn?.addEventListener('click', toggleTheme);
     elements.closeModalBtn?.addEventListener('click', () => closeModal());
     elements.cancelBtn?.addEventListener('click', () => closeModal());
@@ -75,13 +105,23 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.folderPickerBackBtn?.addEventListener('click', openParentFolder);
     elements.folderPickerRefreshBtn?.addEventListener('click', () => loadFolderPickerPath(folderPickerState.currentPath));
 
+    document.addEventListener('click', event => {
+      if (isImageFormatSelectOpen() && !elements.imageFormatSelect?.contains(event.target)) {
+        closeImageFormatSelect();
+      }
+    });
+
 
     // ESC key to close modal
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
 
-      if (!elements.folderPickerModal?.classList.contains('hidden')) {
+      if (isImageFormatSelectOpen()) {
+        closeImageFormatSelect({ restoreFocus: true });
+      } else if (!elements.folderPickerModal?.classList.contains('hidden')) {
         closeFolderPicker();
+      } else if (!elements.imageFormatModal?.classList.contains('hidden')) {
+        closeImageFormatModal();
       } else if (!elements.modal?.classList.contains('hidden')) {
         closeModal();
       }
@@ -117,6 +157,133 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.themeToggleIcon.querySelector('use')?.setAttribute('href', isDark ? '#icon-sun' : '#icon-moon');
     elements.themeToggleBtn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
     elements.themeToggleBtn.setAttribute('title', isDark ? 'Light mode' : 'Dark mode');
+  }
+
+  async function loadImageFormatPreference() {
+    try {
+      const settings = await AppSettings.loadSettings(chrome.storage.local);
+      imageFormatPreference = settings.image.saveFormat;
+      setImageFormatControl(imageFormatPreference);
+    } catch (error) {
+      console.error('Error loading image format preference:', error);
+      showNotification('Could not load image format preference.', 'error');
+    }
+  }
+
+  function openImageFormatModal() {
+    setImageFormatControl(imageFormatPreference);
+    elements.imageFormatModal?.classList.remove('hidden');
+    elements.imageFormatTrigger?.focus();
+  }
+
+  function closeImageFormatModal() {
+    closeImageFormatSelect();
+    elements.imageFormatModal?.classList.add('hidden');
+    setImageFormatControl(imageFormatPreference);
+  }
+
+  function setImageFormatControl(value) {
+    const normalizedValue = ImageFormat.normalizeFormatPreference(value);
+    if (elements.imageFormatPreference) elements.imageFormatPreference.value = normalizedValue;
+    if (elements.imageFormatValue) elements.imageFormatValue.textContent = imageFormatLabels[normalizedValue];
+
+    imageFormatOptionElements.forEach(option => {
+      const isSelected = option.dataset.value === normalizedValue;
+      option.setAttribute('aria-selected', String(isSelected));
+      option.classList.toggle('selected', isSelected);
+    });
+  }
+
+  function isImageFormatSelectOpen() {
+    return elements.imageFormatTrigger?.getAttribute('aria-expanded') === 'true';
+  }
+
+  function openImageFormatSelect({ focusSelected = false } = {}) {
+    elements.imageFormatSelect?.classList.add('is-open');
+    elements.imageFormatOptions?.classList.remove('hidden');
+    elements.imageFormatTrigger?.setAttribute('aria-expanded', 'true');
+
+    if (focusSelected) {
+      const selectedOption = imageFormatOptionElements.find(option => option.getAttribute('aria-selected') === 'true');
+      (selectedOption || imageFormatOptionElements[0])?.focus();
+    }
+  }
+
+  function closeImageFormatSelect({ restoreFocus = false } = {}) {
+    elements.imageFormatSelect?.classList.remove('is-open');
+    elements.imageFormatOptions?.classList.add('hidden');
+    elements.imageFormatTrigger?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) elements.imageFormatTrigger?.focus();
+  }
+
+  function toggleImageFormatSelect() {
+    if (isImageFormatSelectOpen()) {
+      closeImageFormatSelect();
+    } else {
+      openImageFormatSelect();
+    }
+  }
+
+  function selectImageFormat(value) {
+    setImageFormatControl(value);
+    closeImageFormatSelect({ restoreFocus: true });
+  }
+
+  function handleImageFormatTriggerKeydown(event) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      openImageFormatSelect({ focusSelected: true });
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleImageFormatSelect();
+    }
+  }
+
+  function handleImageFormatOptionKeydown(event, index) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const offset = event.key === 'ArrowDown' ? 1 : -1;
+      imageFormatOptionElements[(index + offset + imageFormatOptionElements.length) % imageFormatOptionElements.length]?.focus();
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const targetIndex = event.key === 'Home' ? 0 : imageFormatOptionElements.length - 1;
+      imageFormatOptionElements[targetIndex]?.focus();
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectImageFormat(imageFormatOptionElements[index]?.dataset.value);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeImageFormatSelect({ restoreFocus: true });
+    } else if (event.key === 'Tab') {
+      closeImageFormatSelect();
+    }
+  }
+
+  async function saveImageFormatPreference(event) {
+    event.preventDefault();
+    const selectedPreference = ImageFormat.normalizeFormatPreference(elements.imageFormatPreference?.value);
+
+    try {
+      if (elements.saveImageFormatBtn) elements.saveImageFormatBtn.disabled = true;
+      await AppSettings.updateSettings(chrome.storage.local, {
+        image: {
+          saveFormat: selectedPreference
+        }
+      });
+      imageFormatPreference = selectedPreference;
+      closeImageFormatModal();
+      const backgroundUpdated = await notifyBackgroundConfigUpdated();
+      showNotification(
+        backgroundUpdated ? 'Image format preference saved.' : 'Saved. Reload the extension to apply it.',
+        backgroundUpdated ? 'success' : 'warning'
+      );
+    } catch (error) {
+      console.error('Error saving image format preference:', error);
+      showNotification('Could not save image format preference.', 'error');
+    } finally {
+      if (elements.saveImageFormatBtn) elements.saveImageFormatBtn.disabled = false;
+    }
   }
 
   function openModal(serverId = null) {
@@ -164,10 +331,13 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.saveServerBtn.disabled = true;
       elements.saveServerBtn.innerHTML = `${iconSvg('sync', 'loading')}Saving`;
       
-      await saveServer(formData);
+      const backgroundUpdated = await saveServer(formData);
       closeModal();
       await loadServers();
-      showNotification('Saved', 'success');
+      showNotification(
+        backgroundUpdated ? 'Saved' : 'Saved. Reload the extension to update the menu.',
+        backgroundUpdated ? 'success' : 'warning'
+      );
     } catch (error) {
       console.error('Error saving server:', error);
       showNotification('Could not save settings.', 'error');
@@ -227,9 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       await chrome.storage.local.set({ webdavServers: servers });
       await clearLegacySyncServerData();
-      
-      // Inform background script about the changes
-      chrome.runtime.sendMessage({ action: 'configUpdated' });
+      return await notifyBackgroundConfigUpdated();
     } catch (error) {
       console.error('Error saving server configuration:', error);
       throw new Error('Failed to save server configuration securely');
@@ -644,10 +812,11 @@ document.addEventListener('DOMContentLoaded', () => {
       await clearLegacySyncServerData();
       
       await loadServers();
-      showNotification('Deleted', 'success');
-      
-      // Inform background script
-      chrome.runtime.sendMessage({ action: 'configUpdated' });
+      const backgroundUpdated = await notifyBackgroundConfigUpdated();
+      showNotification(
+        backgroundUpdated ? 'Deleted' : 'Deleted. Reload the extension to update the menu.',
+        backgroundUpdated ? 'success' : 'warning'
+      );
     } catch (error) {
       console.error('Error deleting server:', error);
       showNotification('Could not delete server.', 'error');
@@ -659,6 +828,17 @@ document.addEventListener('DOMContentLoaded', () => {
       await chrome.storage.sync.remove(['webdavServers', 'webdavServersMetadata']);
     } catch (error) {
       console.warn('Could not clear legacy sync storage:', error);
+    }
+  }
+
+  async function notifyBackgroundConfigUpdated() {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'configUpdated' });
+      if (response?.success === false) throw new Error(response.error || 'Background reload failed.');
+      return true;
+    } catch (error) {
+      console.warn('Settings were saved, but the background reload failed:', error);
+      return false;
     }
   }
 
