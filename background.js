@@ -737,6 +737,7 @@ async function createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGen
 
 function isWebdavCollectionResponse(responseText) {
     const xml = String(responseText || '');
+    if (!hasOnlyValidXmlCharacters(xml)) return false;
     const namespaceStack = [];
     let foundCollection = false;
     let rootElementSeen = false;
@@ -752,13 +753,15 @@ function isWebdavCollectionResponse(responseText) {
             const outsideRootText = xml.slice(position, tagStart);
             if (!isXmlWhitespace(outsideRootText)) return false;
             if (!rootElementSeen && outsideRootText) preRootConstructSeen = true;
-        } else if (!hasValidXmlEntityReferences(xml.slice(position, tagStart))) {
+        } else if (!hasValidXmlCharacterData(xml.slice(position, tagStart))) {
             return false;
         }
 
         if (xml.startsWith('<!--', tagStart)) {
             const commentEnd = xml.indexOf('-->', tagStart + 4);
             if (commentEnd < 0) return false;
+            const commentBody = xml.slice(tagStart + 4, commentEnd);
+            if (commentBody.includes('--') || commentBody.endsWith('-')) return false;
             if (!rootElementSeen) preRootConstructSeen = true;
             position = commentEnd + 3;
             continue;
@@ -845,7 +848,7 @@ function isWebdavCollectionResponse(responseText) {
     }
 
     const trailingText = xml.slice(position);
-    if (namespaceStack.length > 0 && !hasValidXmlEntityReferences(trailingText)) return false;
+    if (namespaceStack.length > 0 && !hasValidXmlCharacterData(trailingText)) return false;
     return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && isXmlWhitespace(trailingText);
 }
 
@@ -876,6 +879,11 @@ function hasValidXmlEntityReferences(value) {
     return true;
 }
 
+function hasValidXmlCharacterData(value) {
+    const text = String(value);
+    return !text.includes(']]>') && hasValidXmlEntityReferences(text);
+}
+
 function isValidXmlEntityReference(reference) {
     if (['amp', 'lt', 'gt', 'apos', 'quot'].includes(reference)) return true;
 
@@ -896,6 +904,13 @@ function isValidXmlCharacter(codePoint) {
         (codePoint >= 0x20 && codePoint <= 0xD7FF) ||
         (codePoint >= 0xE000 && codePoint <= 0xFFFD) ||
         (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
+}
+
+function hasOnlyValidXmlCharacters(value) {
+    for (const character of String(value)) {
+        if (!isValidXmlCharacter(character.codePointAt(0))) return false;
+    }
+    return true;
 }
 
 function findXmlTagEnd(xml, start) {
@@ -944,7 +959,7 @@ function parseXmlNamespaceDeclarations(attributeSource) {
         if (valueEnd < 0) return null;
         const value = attributeSource.slice(position, valueEnd);
         position = valueEnd + 1;
-        if (!hasValidXmlEntityReferences(value)) return null;
+        if (value.includes('<') || !hasValidXmlEntityReferences(value)) return null;
 
         if (attributeName === 'xmlns') declarations[''] = value;
         else if (attributeName.startsWith('xmlns:')) declarations[attributeName.slice('xmlns:'.length)] = value;

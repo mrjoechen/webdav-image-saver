@@ -403,6 +403,68 @@ test('validates entity references in WebDAV XML text and attributes', async () =
   await validWorker.ensureWebdavDirectories(server, ['/Images']);
 });
 
+test('rejects illegal XML lexical content in collection responses without caching it', async t => {
+  const collection = '<D:resourcetype><D:collection/></D:resourcetype>';
+  const fixtures = [
+    {
+      name: 'a raw less-than sign in an attribute value',
+      body: `<D:multistatus xmlns:D="DAV:" data="bad<value">${collection}</D:multistatus>`
+    },
+    {
+      name: 'a double hyphen in a comment body',
+      body: `<D:multistatus xmlns:D="DAV:"><!-- bad -- comment -->${collection}</D:multistatus>`
+    },
+    {
+      name: 'a comment body ending in a hyphen before the close delimiter',
+      body: `<D:multistatus xmlns:D="DAV:"><!-- bad--->${collection}</D:multistatus>`
+    },
+    {
+      name: 'a CDATA close delimiter in ordinary text',
+      body: `<D:multistatus xmlns:D="DAV:">bad]]>${collection}</D:multistatus>`
+    },
+    {
+      name: 'an illegal XML code point in an attribute value',
+      body: `<D:multistatus xmlns:D="DAV:" data="bad\u0001value">${collection}</D:multistatus>`
+    },
+    {
+      name: 'an illegal XML code point in text',
+      body: `<D:multistatus xmlns:D="DAV:">bad\u0001text${collection}</D:multistatus>`
+    },
+    {
+      name: 'an illegal XML code point in a comment',
+      body: `<D:multistatus xmlns:D="DAV:"><!-- bad\u0001comment -->${collection}</D:multistatus>`
+    },
+    {
+      name: 'an illegal XML code point in CDATA',
+      body: `<D:multistatus xmlns:D="DAV:"><![CDATA[bad\u0001data]]>${collection}</D:multistatus>`
+    },
+    {
+      name: 'an illegal XML code point in a processing instruction',
+      body: `<D:multistatus xmlns:D="DAV:"><?check bad\u0001data?>${collection}</D:multistatus>`
+    }
+  ];
+
+  for (const fixture of fixtures) {
+    await t.test(fixture.name, async () => {
+      let calls = 0;
+      const worker = await createWorker(async (_url, options) => {
+        calls += 1;
+        return options.method === 'MKCOL' ? response(405) : response(207, '', fixture.body);
+      });
+
+      await assert.rejects(
+        worker.ensureWebdavDirectories(server, ['/Images']),
+        /not a collection\/directory/i
+      );
+      await assert.rejects(
+        worker.ensureWebdavDirectories(server, ['/Images']),
+        /not a collection\/directory/i
+      );
+      assert.equal(calls, 4, 'a malformed response must not populate the confirmed-directory cache');
+    });
+  }
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;
