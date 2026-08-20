@@ -169,6 +169,79 @@ test('reports an actionable error when collection verification XML cannot be rea
   );
 });
 
+test('resolves WebDAV XML namespaces in element scope when verifying collections', async () => {
+  const cases = [
+    {
+      name: 'a local prefix rebind from DAV to another namespace',
+      body: '<root xmlns:D="DAV:"><D:resourcetype xmlns:D="urn:not-dav"><D:collection/></D:resourcetype></root>',
+      accepted: false
+    },
+    {
+      name: 'an unrelated DAV prefix declaration elsewhere in the response',
+      body: '<root xmlns:D="urn:not-dav"><other xmlns:D="DAV:"><D:collection/></other><D:resourcetype><D:collection/></D:resourcetype></root>',
+      accepted: false
+    },
+    {
+      name: 'a locally declared DAV prefix',
+      body: '<root><R:resourcetype xmlns:R="DAV:"><R:collection/></R:resourcetype></root>',
+      accepted: true
+    },
+    {
+      name: 'a default namespace rebound from a non-DAV ancestor to DAV',
+      body: '<root xmlns="urn:not-dav"><resourcetype xmlns="DAV:"><collection></collection></resourcetype></root>',
+      accepted: true
+    },
+    {
+      name: 'a default namespace rebound away from DAV',
+      body: '<root xmlns="DAV:"><resourcetype xmlns="urn:not-dav"><collection/></resourcetype></root>',
+      accepted: false
+    },
+    {
+      name: 'a wrong-case DAV Collection element',
+      body: '<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:Collection/></D:resourcetype></D:multistatus>',
+      accepted: false
+    },
+    {
+      name: 'a wrong-case DAV ResourceType element',
+      body: '<D:multistatus xmlns:D="DAV:"><D:ResourceType><D:collection/></D:ResourceType></D:multistatus>',
+      accepted: false
+    },
+    {
+      name: 'a collection-shaped XML comment',
+      body: '<!-- <D:resourcetype><D:collection/></D:resourcetype> --><D:multistatus xmlns:D="DAV:"><D:resourcetype/></D:multistatus>',
+      accepted: false
+    }
+  ];
+
+  for (const fixture of cases) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL'
+        ? response(405)
+        : response(207, '', fixture.body);
+    });
+
+    if (fixture.accepted) {
+      await worker.ensureWebdavDirectories(server, ['/Images']);
+      assert.equal(calls, 2, fixture.name);
+      continue;
+    }
+
+    await assert.rejects(
+      worker.ensureWebdavDirectories(server, ['/Images']),
+      /not a collection\/directory/i,
+      fixture.name
+    );
+    await assert.rejects(
+      worker.ensureWebdavDirectories(server, ['/Images']),
+      /not a collection\/directory/i,
+      `${fixture.name} should not be cached`
+    );
+    assert.equal(calls, 4, fixture.name);
+  }
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;

@@ -737,41 +737,147 @@ async function createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGen
 
 function isWebdavCollectionResponse(responseText) {
     const xml = String(responseText || '');
-    const resourceTypePattern = /<\s*((?:[A-Za-z_][\w.-]*:)?resourcetype)\b[^>]*>/gi;
-    let resourceTypeMatch;
+    const namespaceStack = [];
+    let foundCollection = false;
+    let rootElementSeen = false;
+    let position = 0;
 
-    while ((resourceTypeMatch = resourceTypePattern.exec(xml)) !== null) {
-        const openingTag = resourceTypeMatch[0];
-        const resourceTypeName = resourceTypeMatch[1];
-        if (/\/\s*>$/.test(openingTag) || !isDavXmlElement(xml, resourceTypeName)) continue;
+    while (position < xml.length) {
+        const tagStart = xml.indexOf('<', position);
+        if (tagStart < 0) break;
+        if (namespaceStack.length === 0 && xml.slice(position, tagStart).trim()) return false;
 
-        const closingTag = new RegExp(`<\\s*\\/\\s*${escapeRegExp(resourceTypeName)}\\s*>`, 'i');
-        const contentStart = resourceTypePattern.lastIndex;
-        const closingMatch = closingTag.exec(xml.slice(contentStart));
-        if (!closingMatch) continue;
-
-        const resourceTypeContent = xml.slice(contentStart, contentStart + closingMatch.index);
-        const collectionPattern = /<\s*((?:[A-Za-z_][\w.-]*:)?collection)\b[^>]*>/gi;
-        let collectionMatch;
-        while ((collectionMatch = collectionPattern.exec(resourceTypeContent)) !== null) {
-            if (isDavXmlElement(xml, collectionMatch[1])) return true;
+        if (xml.startsWith('<!--', tagStart)) {
+            const commentEnd = xml.indexOf('-->', tagStart + 4);
+            if (commentEnd < 0) return false;
+            position = commentEnd + 3;
+            continue;
         }
+        if (xml.startsWith('<![CDATA[', tagStart)) {
+            const cdataEnd = xml.indexOf(']]>', tagStart + 9);
+            if (cdataEnd < 0) return false;
+            position = cdataEnd + 3;
+            continue;
+        }
+        if (xml.startsWith('<?', tagStart)) {
+            const declarationEnd = xml.indexOf('?>', tagStart + 2);
+            if (declarationEnd < 0) return false;
+            position = declarationEnd + 2;
+            continue;
+        }
+
+        const tagEnd = findXmlTagEnd(xml, tagStart + 1);
+        if (tagEnd < 0) return false;
+        const tagSource = xml.slice(tagStart + 1, tagEnd).trim();
+        position = tagEnd + 1;
+        if (!tagSource) return false;
+
+        if (tagSource.startsWith('!')) continue;
+        if (tagSource.startsWith('/')) {
+            const closingName = tagSource.slice(1).trim();
+            if (!isXmlQualifiedName(closingName)) return false;
+            const frame = namespaceStack.pop();
+            if (!frame || frame.qualifiedName !== closingName) return false;
+            continue;
+        }
+
+        const selfClosing = /\/$/.test(tagSource);
+        const startTagSource = selfClosing ? tagSource.slice(0, -1).trimEnd() : tagSource;
+        const nameMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=\s|$)/.exec(startTagSource);
+        if (!nameMatch) return false;
+
+        const qualifiedName = nameMatch[1];
+        const declarations = parseXmlNamespaceDeclarations(startTagSource.slice(qualifiedName.length));
+        if (!declarations) return false;
+        const parentFrame = namespaceStack[namespaceStack.length - 1];
+        if (!parentFrame) {
+            if (rootElementSeen) return false;
+            rootElementSeen = true;
+        }
+        const namespaces = Object.assign(
+            Object.create(null),
+            parentFrame?.namespaces || { xml: 'http://www.w3.org/XML/1998/namespace' },
+            declarations
+        );
+        const resolvedName = resolveXmlQualifiedName(qualifiedName, namespaces);
+        if (!resolvedName) return false;
+
+        const parentIsDavResourceType = parentFrame?.insideDavResourceType || false;
+        if (parentIsDavResourceType && resolvedName.localName === 'collection' && resolvedName.namespaceUri === 'DAV:') {
+            foundCollection = true;
+        }
+
+        const insideDavResourceType = parentIsDavResourceType || (
+            resolvedName.localName === 'resourcetype' && resolvedName.namespaceUri === 'DAV:'
+        );
+        if (!selfClosing) namespaceStack.push({ qualifiedName, namespaces, insideDavResourceType });
     }
 
-    return false;
+    return foundCollection && rootElementSeen && namespaceStack.length === 0 && !xml.slice(position).trim();
 }
 
-function isDavXmlElement(xml, qualifiedName) {
+function findXmlTagEnd(xml, start) {
+    let quote = '';
+    for (let index = start; index < xml.length; index += 1) {
+        const character = xml[index];
+        if (quote) {
+            if (character === quote) quote = '';
+        } else if (character === '"' || character === "'") {
+            quote = character;
+        } else if (character === '>') {
+            return index;
+        }
+    }
+    return -1;
+}
+
+function isXmlQualifiedName(value) {
+    return /^[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?$/.test(value);
+}
+
+function parseXmlNamespaceDeclarations(attributeSource) {
+    const declarations = Object.create(null);
+    const seenAttributes = new Set();
+    let position = 0;
+
+    while (position < attributeSource.length) {
+        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        if (position >= attributeSource.length) break;
+
+        const attributeMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(attributeSource.slice(position));
+        if (!attributeMatch) return null;
+        const attributeName = attributeMatch[1];
+        if (seenAttributes.has(attributeName)) return null;
+        seenAttributes.add(attributeName);
+        position += attributeName.length;
+
+        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        if (attributeSource[position] !== '=') return null;
+        position += 1;
+        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        const quote = attributeSource[position];
+        if (quote !== '"' && quote !== "'") return null;
+        position += 1;
+        const valueEnd = attributeSource.indexOf(quote, position);
+        if (valueEnd < 0) return null;
+        const value = attributeSource.slice(position, valueEnd);
+        position = valueEnd + 1;
+
+        if (attributeName === 'xmlns') declarations[''] = value;
+        else if (attributeName.startsWith('xmlns:')) declarations[attributeName.slice('xmlns:'.length)] = value;
+    }
+
+    return declarations;
+}
+
+function resolveXmlQualifiedName(qualifiedName, namespaces) {
     const colonIndex = qualifiedName.indexOf(':');
-    const namespaceAttribute = colonIndex >= 0
-        ? `xmlns:${qualifiedName.slice(0, colonIndex)}`
-        : 'xmlns';
-    const namespacePattern = new RegExp(`\\b${escapeRegExp(namespaceAttribute)}\\s*=\\s*['"]DAV:['"]`);
-    return namespacePattern.test(xml);
-}
-
-function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefix = colonIndex >= 0 ? qualifiedName.slice(0, colonIndex) : '';
+    if (prefix && !Object.prototype.hasOwnProperty.call(namespaces, prefix)) return null;
+    return {
+        localName: colonIndex >= 0 ? qualifiedName.slice(colonIndex + 1) : qualifiedName,
+        namespaceUri: namespaces[prefix] || ''
+    };
 }
 
 function confirmWebdavDirectory(cacheKey, cacheGeneration) {
