@@ -41,6 +41,8 @@ test('normalizes domains', () => {
 test('generates legacy automatic and original names', () => {
     assert.equal(rules.generateFilename({ rule: 'automatic', imageUrl: 'https://img/a.jpg', pageUrl: 'https://www.example.com/p', extension: 'jpg', now }), 'image_20260820140509_www_example_com.jpg');
     assert.equal(rules.generateFilename({ rule: 'original', imageUrl: 'https://x/holiday.photo.png', pageUrl: 'https://example.com', extension: 'jpg', now }), 'holiday.photo.jpg');
+    assert.equal(rules.generateFilename({ rule: 'automatic', imageUrl: 'https://img/a.jpg', pageUrl: 'file:///tmp/page.html', extension: 'jpg', now }), 'image_20260820140509_.jpg');
+    assert.equal(rules.generateFilename({ rule: 'automatic', imageUrl: 'mailto:user@example.com', pageUrl: 'mailto:user@example.com', extension: 'jpg', now }), 'image_20260820140509_.jpg');
 });
 
 test('uses legacy timestamp fallback when either URL is invalid', () => {
@@ -62,6 +64,19 @@ test('sanitizes forbidden chars, device names, trailing punctuation, and byte le
     assert.ok(Buffer.byteLength(result, 'utf8') <= 255);
     assert.match(result, /\.jpg$/);
     assert.equal(rules.sanitizeFilename('...', 'jpg', 'fallback.jpg'), 'fallback.jpg');
+    assert.equal(rules.sanitizeFilename('e\u0301', 'jpg', 'fallback.jpg'), 'é.jpg');
+    assert.equal(rules.sanitizeFilename('a\u0000\u0001b', 'jpg', 'fallback.jpg'), 'a__b.jpg');
+    assert.equal(rules.sanitizeFilename('...', 'jpg', '...'), 'image.jpg');
+    const long = rules.sanitizeFilename('前缀' + '😀'.repeat(200), 'jpg', 'fallback.jpg');
+    assert.ok(long.startsWith('前缀'));
+    assert.ok(Buffer.byteLength(long, 'utf8') <= 255);
+    assert.match(long, /\.jpg$/);
+    const malformed = rules.sanitizeFilename('bad\uD800name', 'jpg', 'fallback.jpg');
+    assert.ok(malformed.includes('\uFFFD'));
+    assert.doesNotThrow(() => encodeURIComponent(malformed));
+    const generatedMalformed = rules.generateFilename({ rule: 'custom', template: '{pageTitle}', pageTitle: 'page\uDFFF', imageUrl: 'https://x/a.jpg', pageUrl: 'https://example.com', extension: 'jpg', now });
+    assert.ok(generatedMalformed.includes('\uFFFD'));
+    assert.doesNotThrow(() => encodeURIComponent(generatedMalformed));
 });
 
 test('reads dimensions and closes bitmap, including failures', async () => {
@@ -72,6 +87,9 @@ test('reads dimensions and closes bitmap, including failures', async () => {
     assert.deepEqual(await rules.readImageDimensions({}, undefined), { width: 'unknown', height: 'unknown' });
     assert.deepEqual(await rules.readImageDimensions({}, async () => { throw new Error('bad'); }), { width: 'unknown', height: 'unknown' });
     assert.deepEqual(await rules.readImageDimensions({}, async () => ({ width: 1, height: 2, close() { throw new Error('close failed'); } })), { width: 1, height: 2 });
+    let invalidClosed = false;
+    assert.deepEqual(await rules.readImageDimensions({}, async () => ({ width: 0, height: 20, close() { invalidClosed = true; } })), { width: 'unknown', height: 'unknown' });
+    assert.equal(invalidClosed, true);
 });
 
 test('falls back to automatic for invalid custom output/template', () => {

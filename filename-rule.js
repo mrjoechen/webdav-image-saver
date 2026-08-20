@@ -60,6 +60,24 @@
         return /^[a-z0-9]{1,10}$/.test(result) ? result : 'bin';
     }
 
+    function toWellFormed(value) {
+        const stringValue = String(value);
+        if (typeof stringValue.toWellFormed === 'function') return stringValue.toWellFormed();
+        let result = '';
+        for (let index = 0; index < stringValue.length; index += 1) {
+            const code = stringValue.charCodeAt(index);
+            if (code >= 0xd800 && code <= 0xdbff) {
+                const next = stringValue.charCodeAt(index + 1);
+                if (next >= 0xdc00 && next <= 0xdfff) {
+                    result += stringValue[index] + stringValue[index + 1];
+                    index += 1;
+                } else result += '\uFFFD';
+            } else if (code >= 0xdc00 && code <= 0xdfff) result += '\uFFFD';
+            else result += stringValue[index];
+        }
+        return result;
+    }
+
     function utf8Truncate(value, maxBytes) {
         let result = '';
         for (const character of value) {
@@ -77,10 +95,10 @@
 
     function sanitizeFilename(value, actualExtension, fallbackFilename) {
         const ext = extension(actualExtension);
-        let fallback = String(fallbackFilename || `image.${ext}`).normalize('NFC').replace(FORBIDDEN, '_').trim().replace(/[ .]+$/g, '');
+        let fallback = toWellFormed(fallbackFilename || `image.${ext}`).normalize('NFC').replace(FORBIDDEN, '_').trim().replace(/[ .]+$/g, '');
         if (!fallback) fallback = `image.${ext}`;
         if (!/\.[a-z0-9]{1,10}$/i.test(fallback)) fallback += `.${ext}`;
-        let result = String(value == null ? '' : value).normalize('NFC').replace(FORBIDDEN, '_').trim().replace(/[ .]+$/g, '');
+        let result = toWellFormed(value == null ? '' : value).normalize('NFC').replace(FORBIDDEN, '_').trim().replace(/[ .]+$/g, '');
         if (!result) result = fallback;
         if (DEVICES.test(result)) result = `_${result}`;
         if (!result.toLowerCase().endsWith(`.${ext}`)) result += `.${ext}`;
@@ -103,7 +121,7 @@
     function automaticFilename({ imageUrl, pageUrl, extension: actualExtension, now }) {
         if (!parseUrl(imageUrl) || !parseUrl(pageUrl)) return `image_${now instanceof Date ? now.getTime() : Date.now()}_fallback.${extension(actualExtension)}`;
         const url = parseUrl(pageUrl);
-        const host = url && url.hostname ? url.hostname.replace(/\./g, '_') : 'unknown-site';
+        const host = url ? url.hostname.replace(/\./g, '_') : 'unknown-site';
         const parts = dateParts(now);
         return `image_${parts.date}${parts.time}_${host}.${extension(actualExtension)}`;
     }
@@ -131,7 +149,7 @@
         try {
             if (typeof createImageBitmapImpl !== 'function') throw new Error('unsupported');
             bitmap = await createImageBitmapImpl(blob);
-            if (!bitmap || !Number.isFinite(bitmap.width) || !Number.isFinite(bitmap.height)) throw new Error('invalid dimensions');
+            if (!bitmap || !Number.isFinite(bitmap.width) || !Number.isFinite(bitmap.height) || bitmap.width <= 0 || bitmap.height <= 0) throw new Error('invalid dimensions');
             return { width: bitmap.width, height: bitmap.height };
         } catch (_) {
             return { width: 'unknown', height: 'unknown' };
