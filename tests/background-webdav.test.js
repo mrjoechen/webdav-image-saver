@@ -12,14 +12,17 @@ const DirectoryRule = require('../directory-rule.js');
 const backgroundSource = readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
 const testExport = ';globalThis.__backgroundWebdavTest = { ensureWebdavDirectories, resetWebdavDirectoryCache, uploadImage, configReady };';
 
-function response(status, statusText = '') {
+function response(status, statusText = '', body = '') {
   return {
     status,
     statusText,
     ok: status >= 200 && status < 300,
-    text: async () => ''
+    text: async () => body
   };
 }
+
+const davCollectionXml = '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response></D:multistatus>';
+const defaultNamespaceCollectionXml = '<?xml version="1.0"?><multistatus xmlns="DAV:"><response><propstat><prop><resourcetype><collection></collection></resourcetype></prop></propstat></response></multistatus>';
 
 async function waitFor(check, message = 'condition was not met') {
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -107,7 +110,9 @@ test('accepts an existing collection only after 405 is verified by depth-zero PR
   const requests = [];
   const worker = await createWorker(async (url, options) => {
     requests.push({ url, options });
-    return response(options.method === 'MKCOL' ? 405 : 207);
+    return options.method === 'MKCOL'
+      ? response(405)
+      : response(207, '', davCollectionXml);
   });
 
   await worker.ensureWebdavDirectories(server, ['/Images']);
@@ -116,6 +121,52 @@ test('accepts an existing collection only after 405 is verified by depth-zero PR
   assert.equal(requests[1].options.headers.get('Depth'), '0');
   assert.equal(requests[1].options.headers.get('Authorization'), 'Basic YWxpY2U6c2VjcmV0');
   assert.equal(requests[1].options.headers.get('Content-Type'), 'application/xml; charset=utf-8');
+});
+
+test('accepts default-namespace DAV collection XML after MKCOL is not allowed', async () => {
+  const worker = await createWorker(async (_url, options) => (
+    options.method === 'MKCOL'
+      ? response(405)
+      : response(207, '', defaultNamespaceCollectionXml)
+  ));
+
+  await worker.ensureWebdavDirectories(server, ['/Images']);
+});
+
+test('rejects a non-collection PROPFIND response and does not cache it', async () => {
+  let calls = 0;
+  const regularResourceXml = '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:propstat><D:prop><D:resourcetype/></D:prop></D:propstat></D:response></D:multistatus>';
+  const worker = await createWorker(async (_url, options) => {
+    calls += 1;
+    return options.method === 'MKCOL'
+      ? response(405)
+      : response(207, '', regularResourceXml);
+  });
+
+  await assert.rejects(
+    worker.ensureWebdavDirectories(server, ['/Images']),
+    /not a collection\/directory/i
+  );
+  await assert.rejects(
+    worker.ensureWebdavDirectories(server, ['/Images']),
+    /not a collection\/directory/i
+  );
+  assert.equal(calls, 4);
+});
+
+test('reports an actionable error when collection verification XML cannot be read', async () => {
+  const worker = await createWorker(async (_url, options) => {
+    if (options.method === 'MKCOL') return response(405);
+    return {
+      ...response(207),
+      text: async () => { throw new Error('connection interrupted'); }
+    };
+  });
+
+  await assert.rejects(
+    worker.ensureWebdavDirectories(server, ['/Images']),
+    /Could not read WebDAV directory verification response: connection interrupted/
+  );
 });
 
 test('shares in-flight creation and caches confirmed collections', async () => {

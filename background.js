@@ -717,6 +717,15 @@ async function createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGen
     });
 
     if (verification.ok || verification.status === 207) {
+        let verificationBody;
+        try {
+            verificationBody = await verification.text();
+        } catch (error) {
+            throw new Error(`Could not read WebDAV directory verification response: ${error.message || String(error)}`);
+        }
+        if (!isWebdavCollectionResponse(verificationBody)) {
+            throw new Error('WebDAV target exists but is not a collection/directory.');
+        }
         confirmWebdavDirectory(cacheKey, cacheGeneration);
         return;
     }
@@ -724,6 +733,45 @@ async function createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGen
         throw new Error('Cannot create directory: server does not support MKCOL and the directory does not exist.');
     }
     throw webdavDirectoryError(verification.status, verification.statusText, true);
+}
+
+function isWebdavCollectionResponse(responseText) {
+    const xml = String(responseText || '');
+    const resourceTypePattern = /<\s*((?:[A-Za-z_][\w.-]*:)?resourcetype)\b[^>]*>/gi;
+    let resourceTypeMatch;
+
+    while ((resourceTypeMatch = resourceTypePattern.exec(xml)) !== null) {
+        const openingTag = resourceTypeMatch[0];
+        const resourceTypeName = resourceTypeMatch[1];
+        if (/\/\s*>$/.test(openingTag) || !isDavXmlElement(xml, resourceTypeName)) continue;
+
+        const closingTag = new RegExp(`<\\s*\\/\\s*${escapeRegExp(resourceTypeName)}\\s*>`, 'i');
+        const contentStart = resourceTypePattern.lastIndex;
+        const closingMatch = closingTag.exec(xml.slice(contentStart));
+        if (!closingMatch) continue;
+
+        const resourceTypeContent = xml.slice(contentStart, contentStart + closingMatch.index);
+        const collectionPattern = /<\s*((?:[A-Za-z_][\w.-]*:)?collection)\b[^>]*>/gi;
+        let collectionMatch;
+        while ((collectionMatch = collectionPattern.exec(resourceTypeContent)) !== null) {
+            if (isDavXmlElement(xml, collectionMatch[1])) return true;
+        }
+    }
+
+    return false;
+}
+
+function isDavXmlElement(xml, qualifiedName) {
+    const colonIndex = qualifiedName.indexOf(':');
+    const namespaceAttribute = colonIndex >= 0
+        ? `xmlns:${qualifiedName.slice(0, colonIndex)}`
+        : 'xmlns';
+    const namespacePattern = new RegExp(`\\b${escapeRegExp(namespaceAttribute)}\\s*=\\s*['"]DAV:['"]`);
+    return namespacePattern.test(xml);
+}
+
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function confirmWebdavDirectory(cacheKey, cacheGeneration) {
