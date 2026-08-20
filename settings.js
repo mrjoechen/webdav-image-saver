@@ -2,17 +2,24 @@
     const imageFormat = typeof module === 'object' && module.exports
         ? require('./image-format.js')
         : root.ImageFormat;
-    const appSettings = factory(imageFormat);
+    const filenameRule = typeof module === 'object' && module.exports
+        ? require('./filename-rule.js')
+        : root.FilenameRule;
+    const directoryRule = typeof module === 'object' && module.exports
+        ? require('./directory-rule.js')
+        : root.DirectoryRule;
+    const appSettings = factory(imageFormat, filenameRule, directoryRule);
 
     if (typeof module === 'object' && module.exports) {
         module.exports = appSettings;
     }
 
     root.AppSettings = appSettings;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (imageFormat) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (imageFormat, filenameRule, directoryRule) {
     const SETTINGS_STORAGE_KEY = 'appSettings';
     const LEGACY_IMAGE_FORMAT_KEY = 'imageFormatPreference';
-    const SETTINGS_SCHEMA_VERSION = 1;
+    const SETTINGS_SCHEMA_VERSION = 2;
+    const DEFAULT_CUSTOM_TEMPLATE = filenameRule.DEFAULT_CUSTOM_TEMPLATE;
     let settingsUpdateQueue = Promise.resolve();
 
     function isPlainObject(value) {
@@ -24,6 +31,13 @@
             schemaVersion: SETTINGS_SCHEMA_VERSION,
             image: {
                 saveFormat: 'original'
+            },
+            filename: {
+                rule: 'automatic',
+                customTemplate: DEFAULT_CUSTOM_TEMPLATE
+            },
+            directory: {
+                rule: 'fixed'
             }
         };
     }
@@ -31,10 +45,15 @@
     function normalizeSettings(value, legacyImageFormat) {
         const source = isPlainObject(value) ? value : {};
         const sourceImage = isPlainObject(source.image) ? source.image : {};
+        const sourceFilename = isPlainObject(source.filename) ? source.filename : {};
+        const sourceDirectory = isPlainObject(source.directory) ? source.directory : {};
         const hasStoredImageFormat = Object.prototype.hasOwnProperty.call(sourceImage, 'saveFormat');
         const sourceSchemaVersion = Number.isInteger(source.schemaVersion) && source.schemaVersion > 0
             ? source.schemaVersion
             : SETTINGS_SCHEMA_VERSION;
+        const customTemplate = String(Object.prototype.hasOwnProperty.call(sourceFilename, 'customTemplate')
+            ? sourceFilename.customTemplate == null ? '' : sourceFilename.customTemplate
+            : DEFAULT_CUSTOM_TEMPLATE).trim();
 
         return {
             ...source,
@@ -44,6 +63,17 @@
                 saveFormat: imageFormat.normalizeFormatPreference(
                     hasStoredImageFormat ? sourceImage.saveFormat : legacyImageFormat
                 )
+            },
+            filename: {
+                ...sourceFilename,
+                rule: filenameRule.normalizeFilenameRule(sourceFilename.rule),
+                customTemplate: filenameRule.validateTemplate(customTemplate).valid
+                    ? customTemplate
+                    : DEFAULT_CUSTOM_TEMPLATE
+            },
+            directory: {
+                ...sourceDirectory,
+                rule: directoryRule.normalizeDirectoryRule(sourceDirectory.rule)
             }
         };
     }
