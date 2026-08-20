@@ -12,8 +12,7 @@ function readProjectFile(relativePath) {
 test('background loads format support and routes selected formats through conversion', () => {
   const backgroundSource = readProjectFile('background.js');
 
-  assert.match(backgroundSource, /importScripts\(['"]image-format\.js['"]\)/);
-  assert.match(backgroundSource, /importScripts\(['"]settings\.js['"]\)/);
+  assert.match(backgroundSource, /importScripts\(['"]image-format\.js['"]\);\s*importScripts\(['"]filename-rule\.js['"]\);\s*importScripts\(['"]directory-rule\.js['"]\);\s*importScripts\(['"]settings\.js['"]\)/);
   assert.match(backgroundSource, /AppSettings\.loadSettings/);
   assert.match(backgroundSource, /appSettings\.image\.saveFormat/);
   assert.match(backgroundSource, /configReloadQueue/);
@@ -53,6 +52,7 @@ test('options page exposes and persists the global image format preference', () 
   assert.match(optionsHtml, /id="image-format-settings-btn"/);
   assert.match(optionsHtml, /id="image-format-modal"/);
   assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>/);
+  assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>\s*<script src="\.\.\/filename-rule\.js"><\/script>\s*<script src="\.\.\/directory-rule\.js"><\/script>\s*<script src="\.\.\/settings\.js"><\/script>/);
   assert.match(optionsHtml, /<script src="\.\.\/settings\.js"><\/script>/);
   assert.doesNotMatch(optionsHtml, /<select[^>]*id="image-format-preference"/);
   assert.match(optionsHtml, /id="image-format-trigger"[^>]*role="combobox"/);

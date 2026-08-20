@@ -13,16 +13,22 @@ const {
 function createStorage(initialData = {}) {
   const data = structuredClone(initialData);
   const calls = { remove: [], set: [] };
+  let api;
 
-  return {
+  api = {
     calls,
     data,
+    failNextSet: false,
     async get(keys) {
       const requestedKeys = Array.isArray(keys) ? keys : [keys];
       return Object.fromEntries(requestedKeys.map(key => [key, structuredClone(data[key])]));
     },
     async set(values) {
       calls.set.push(structuredClone(values));
+      if (api.failNextSet) {
+        api.failNextSet = false;
+        throw new Error('set failed once');
+      }
       Object.assign(data, structuredClone(values));
     },
     async remove(keys) {
@@ -31,6 +37,7 @@ function createStorage(initialData = {}) {
       requestedKeys.forEach(key => delete data[key]);
     }
   };
+  return api;
 }
 
 test('creates exact version 2 defaults and exports', () => {
@@ -112,6 +119,45 @@ test('preserves unknown fields and future schema versions at every level', () =>
   });
 });
 
+test('preserves present future-schema values without normalization', () => {
+  const source = {
+    schemaVersion: 4,
+    image: { saveFormat: 'avif' },
+    filename: { rule: 'content-hash', customTemplate: ' {futureVariable} ' },
+    directory: { rule: 'project' }
+  };
+  assert.deepEqual(normalizeSettings(source), source);
+});
+
+test('future-schema load does not destructively canonicalize present values', async () => {
+  const stored = {
+    schemaVersion: 4,
+    image: { saveFormat: 'avif' },
+    filename: { rule: 'content-hash', customTemplate: '{futureVariable}' },
+    directory: { rule: 'project' }
+  };
+  const storage = createStorage({ appSettings: stored });
+  const settings = await loadSettings(storage);
+  assert.deepEqual(settings, stored);
+  assert.deepEqual(storage.calls.set, []);
+});
+
+test('future-schema update preserves future values while applying unrelated changes', async () => {
+  const storage = createStorage({ appSettings: {
+    schemaVersion: 4,
+    image: { saveFormat: 'avif' },
+    filename: { rule: 'content-hash', customTemplate: '{futureVariable}' },
+    directory: { rule: 'project' }
+  } });
+  const settings = await updateSettings(storage, { upload: { countdownSeconds: 8 } });
+  assert.equal(settings.schemaVersion, 4);
+  assert.equal(settings.image.saveFormat, 'avif');
+  assert.equal(settings.filename.rule, 'content-hash');
+  assert.equal(settings.filename.customTemplate, '{futureVariable}');
+  assert.equal(settings.directory.rule, 'project');
+  assert.equal(settings.upload.countdownSeconds, 8);
+});
+
 test('non-object groups safely normalize and partial updates preserve nested future fields', async () => {
   const storage = createStorage({
     appSettings: {
@@ -162,4 +208,13 @@ test('concurrent partial updates across groups and unrelated fields retain all v
 
 test('invalid image formats fall back to original', () => {
   assert.equal(normalizeSettings({ image: { saveFormat: 'invalid' } }).image.saveFormat, 'original');
+});
+
+test('queue recovers after a failed storage update', async () => {
+  const storage = createStorage({ appSettings: createDefaultSettings() });
+  storage.failNextSet = true;
+  await assert.rejects(updateSettings(storage, { image: { saveFormat: 'png' } }), /set failed once/);
+  const settings = await updateSettings(storage, { image: { saveFormat: 'webp' } });
+  assert.equal(settings.image.saveFormat, 'webp');
+  assert.equal(storage.data.appSettings.image.saveFormat, 'webp');
 });

@@ -51,6 +51,7 @@
         const sourceSchemaVersion = Number.isInteger(source.schemaVersion) && source.schemaVersion > 0
             ? source.schemaVersion
             : SETTINGS_SCHEMA_VERSION;
+        const isFutureSchema = sourceSchemaVersion > SETTINGS_SCHEMA_VERSION;
         const customTemplate = String(Object.prototype.hasOwnProperty.call(sourceFilename, 'customTemplate')
             ? sourceFilename.customTemplate == null ? '' : sourceFilename.customTemplate
             : DEFAULT_CUSTOM_TEMPLATE).trim();
@@ -60,20 +61,28 @@
             schemaVersion: Math.max(sourceSchemaVersion, SETTINGS_SCHEMA_VERSION),
             image: {
                 ...sourceImage,
-                saveFormat: imageFormat.normalizeFormatPreference(
-                    hasStoredImageFormat ? sourceImage.saveFormat : legacyImageFormat
-                )
+                saveFormat: isFutureSchema && hasStoredImageFormat
+                    ? sourceImage.saveFormat
+                    : imageFormat.normalizeFormatPreference(
+                        hasStoredImageFormat ? sourceImage.saveFormat : legacyImageFormat
+                    )
             },
             filename: {
                 ...sourceFilename,
-                rule: filenameRule.normalizeFilenameRule(sourceFilename.rule),
-                customTemplate: filenameRule.validateTemplate(customTemplate).valid
-                    ? customTemplate
-                    : DEFAULT_CUSTOM_TEMPLATE
+                rule: isFutureSchema && Object.prototype.hasOwnProperty.call(sourceFilename, 'rule')
+                    ? sourceFilename.rule
+                    : filenameRule.normalizeFilenameRule(sourceFilename.rule),
+                customTemplate: isFutureSchema && Object.prototype.hasOwnProperty.call(sourceFilename, 'customTemplate')
+                    ? sourceFilename.customTemplate
+                    : filenameRule.validateTemplate(customTemplate).valid
+                        ? customTemplate
+                        : DEFAULT_CUSTOM_TEMPLATE
             },
             directory: {
                 ...sourceDirectory,
-                rule: directoryRule.normalizeDirectoryRule(sourceDirectory.rule)
+                rule: isFutureSchema && Object.prototype.hasOwnProperty.call(sourceDirectory, 'rule')
+                    ? sourceDirectory.rule
+                    : directoryRule.normalizeDirectoryRule(sourceDirectory.rule)
             }
         };
     }

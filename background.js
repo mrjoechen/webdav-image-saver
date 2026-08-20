@@ -1,4 +1,6 @@
 importScripts('image-format.js');
+importScripts('filename-rule.js');
+importScripts('directory-rule.js');
 importScripts('settings.js');
 
 // Store configurations in memory for quick access
