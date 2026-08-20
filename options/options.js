@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!elements.filenamePreview) return;
     elements.filenamePreview.textContent = FilenameRule.generateFilename({
       rule: FilenameRule.normalizeFilenameRule(elements.filenameRule?.value),
-      template: elements.filenameTemplate?.value || FilenameRule.DEFAULT_CUSTOM_TEMPLATE,
+      template: elements.filenameTemplate.value,
       imageUrl: 'https://cdn.example.net/photos/sunset.png',
       pageUrl: 'https://www.example.com/article',
       pageTitle: 'Summer trip',

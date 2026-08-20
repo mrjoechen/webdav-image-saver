@@ -255,22 +255,22 @@
                     <h4 id="filename-section-title">File naming rule</h4>
                     <div class="form-group">
                         <label for="filename-rule">File naming rule</label>
-                        <select id="filename-rule" class="form-input settings-select">
+                        <select id="filename-rule" class="form-input settings-select" aria-describedby="filename-rule-helper">
                             <option value="automatic">Automatic</option>
                             <option value="original">Original filename</option>
                             <option value="custom">Custom template</option>
                         </select>
-                        <div class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Choose a safe default, keep the original file name, or build a descriptive template.</span></div>
+                        <div id="filename-rule-helper" class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Choose a safe default, keep the original file name, or build a descriptive template.</span></div>
                     </div>
                     <div id="filename-template-group" class="filename-template-group" hidden>
                         <div class="form-group">
                             <label for="filename-template">Filename template</label>
-                            <input type="text" id="filename-template" class="form-input" value="{originalName}_{date}_{domain}.{ext}" aria-describedby="filename-template-error" aria-invalid="false">
+                            <input type="text" id="filename-template" class="form-input" value="{originalName}_{date}_{domain}.{ext}" aria-describedby="filename-template-helper filename-template-error" aria-invalid="false">
                             <p id="filename-template-error" class="form-error hidden" role="alert" aria-live="polite"></p>
                         </div>
                         <p class="filename-preview-label">Preview</p>
-                        <output id="filename-preview" class="filename-preview" aria-live="polite"></output>
-                        <p class="variable-help">Variables: <code>{originalName}</code>, <code>{date}</code> (YYYYMMDD), <code>{time}</code> (HHMMSS), <code>{domain}</code>, <code>{pageTitle}</code>, <code>{width}</code>, <code>{height}</code>, <code>{ext}</code>.</p>
+                        <output id="filename-preview" class="filename-preview template-preview" aria-live="polite"></output>
+                        <p id="filename-template-helper" class="variable-help template-variables">Variables: <code class="variable-token">{originalName}</code>, <code class="variable-token">{date}</code> (YYYYMMDD), <code class="variable-token">{time}</code> (HHMMSS), <code class="variable-token">{domain}</code>, <code class="variable-token">{pageTitle}</code>, <code class="variable-token">{width}</code>, <code class="variable-token">{height}</code>, <code class="variable-token">{ext}</code>.</p>
                     </div>
                 </section>
 
@@ -278,13 +278,13 @@
                     <h4 id="directory-section-title">Save directory rule</h4>
                     <div class="form-group">
                         <label for="directory-rule">Save directory rule</label>
-                        <select id="directory-rule" class="form-input settings-select">
+                        <select id="directory-rule" class="form-input settings-select" aria-describedby="directory-rule-helper">
                             <option value="fixed">Fixed directory</option>
                             <option value="date">By date</option>
                             <option value="domain">By website</option>
                             <option value="domain-date">By website and date</option>
                         </select>
-                        <div class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Rules are relative to the target folder configured on the selected WebDAV server. /Images is only an example, never a fixed path.</span></div>
+                        <div id="directory-rule-helper" class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Rules are relative to the target folder configured on the selected WebDAV server. /Images is only an example, never a fixed path.</span></div>
                     </div>
                 </section>
             </form>

@@ -613,11 +613,23 @@ button {
   font-size: var(--font-size-sm);
 }
 
+.template-preview {
+  font-variant-ligatures: none;
+}
+
 .variable-help {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.template-variables {
+  display: block;
+}
+
+.variable-token {
+  white-space: nowrap;
 }
 
 .variable-help code,
