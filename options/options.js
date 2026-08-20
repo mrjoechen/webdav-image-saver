@@ -141,6 +141,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
       const saveSettingsVisible = !elements.saveSettingsModal?.classList.contains('hidden');
       if (saveSettingsVisible) {
+        if (e.key === 'Escape' && isImageFormatSelectOpen()) {
+          e.preventDefault();
+          closeImageFormatSelect({ restoreFocus: true });
+          return;
+        }
         if (isSaving) {
           if (e.key === 'Escape') e.preventDefault();
           return;

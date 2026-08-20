@@ -152,8 +152,36 @@ function createOptionsHarness({ settings, loadSettings = async () => settings, u
     confirm: () => true,
     setTimeout: () => 0
   };
-  vm.runInNewContext(readProjectFile('options/options.js'), context, { filename: 'options.js' });
-  return { elements, document, formatOptions, runtimeCalls, notificationMessage };
+  context.globalThis = context;
+  const initMarker = '  // Initialize the app\n  init();';
+  const testApiInjection = `  const loadSaveSettingsForTest = loadSaveSettings;
+  let lastSaveSettingsLoadPromise = null;
+  loadSaveSettings = (...args) => {
+    lastSaveSettingsLoadPromise = loadSaveSettingsForTest(...args);
+    return lastSaveSettingsLoadPromise;
+  };
+  window.__saveSettingsTestApi = {
+    loadSaveSettings,
+    getLastLoadPromise: () => lastSaveSettingsLoadPromise,
+    getState: () => ({
+      ready: saveSettingsReady,
+      loading: saveSettingsLoading,
+      persisted: copySaveSettings(persistedSaveSettings)
+    })
+  };
+
+${initMarker}`;
+  const optionsSource = readProjectFile('options/options.js');
+  assert.ok(optionsSource.includes(initMarker), 'options test hook marker must remain stable');
+  vm.runInNewContext(optionsSource.replace(initMarker, testApiInjection), context, { filename: 'options.js' });
+  return {
+    elements,
+    document,
+    formatOptions,
+    runtimeCalls,
+    notificationMessage,
+    get testApi() { return context.window.__saveSettingsTestApi; }
+  };
 }
 
 async function flushOptionsInit() {
@@ -515,7 +543,7 @@ test('save settings keeps returned state when background reload reports a warnin
   assert.equal(harness.elements['directory-rule'].value, 'date');
 });
 
-test('save settings waits for a successful load and retries failures', async () => {
+test('save settings waits for a successful load, retries failures, and ignores stale initial loads', async () => {
   const firstLoad = deferred();
   const readySettings = {
     image: { saveFormat: 'png' },
@@ -557,6 +585,39 @@ test('save settings waits for a successful load and retries failures', async () 
   await flushOptionsInit();
   assert.equal(retryHarness.elements['save-settings-modal'].classList.contains('hidden'), false);
   assert.equal(retryHarness.elements['filename-rule'].value, 'original');
+
+  const initialLoad = deferred();
+  const newerLoad = deferred();
+  const olderSettings = {
+    image: { saveFormat: 'png' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'date' }
+  };
+  const newerSettings = {
+    image: { saveFormat: 'webp' },
+    filename: { rule: 'custom', customTemplate: '{domain}.{ext}' },
+    directory: { rule: 'domain' }
+  };
+  let staleLoadCount = 0;
+  const staleHarness = createOptionsHarness({
+    settings: olderSettings,
+    loadSettings: () => (++staleLoadCount === 1 ? initialLoad.promise : newerLoad.promise),
+    updateSettings: async () => newerSettings
+  });
+  await staleHarness.document.emit('DOMContentLoaded');
+  const initialResult = staleHarness.testApi.getLastLoadPromise();
+  assert.ok(initialResult);
+  const newerResult = staleHarness.testApi.loadSaveSettings();
+  newerLoad.resolve(newerSettings);
+  assert.equal(await newerResult, true);
+  assert.equal(staleHarness.testApi.getState().ready, true);
+  assert.equal(staleHarness.elements['save-settings-btn'].disabled, false);
+  assert.equal(staleHarness.elements['image-format-preference'].value, 'webp');
+  initialLoad.resolve(olderSettings);
+  assert.equal(await initialResult, false);
+  assert.equal(staleHarness.testApi.getState().persisted.image.saveFormat, 'webp');
+  assert.equal(staleHarness.elements['filename-rule'].value, 'custom');
+  assert.equal(staleHarness.elements['directory-rule'].value, 'domain');
 
 });
 
@@ -630,6 +691,18 @@ test('save settings dialog traps tab and returns focus after each permitted dism
   await flushOptionsInit();
   await harness.elements['save-settings-btn'].emit('click');
   assert.equal(harness.document.activeElement, harness.elements['image-format-trigger']);
+  await harness.elements['image-format-trigger'].emit('click');
+  assert.equal(harness.elements['image-format-trigger'].getAttribute('aria-expanded'), 'true');
+  await harness.document.emit('keydown', { key: 'Escape', preventDefault() {} });
+  assert.equal(harness.elements['image-format-options'].classList.contains('hidden'), true);
+  assert.equal(harness.elements['image-format-trigger'].getAttribute('aria-expanded'), 'false');
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), false);
+  assert.equal(harness.document.activeElement, harness.elements['image-format-trigger']);
+  await harness.document.emit('keydown', { key: 'Escape' });
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), true);
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
+
+  await harness.elements['save-settings-btn'].emit('click');
   harness.elements['close-save-settings-btn'].focus();
   let prevented = false;
   await harness.document.emit('keydown', { key: 'Tab', shiftKey: true, preventDefault() { prevented = true; } });
