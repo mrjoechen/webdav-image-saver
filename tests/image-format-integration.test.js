@@ -23,6 +23,7 @@ function createFakeElement(id, { value = '', className = '', dataset = {}, hidde
     textContent: '',
     innerHTML: '',
     disabled: false,
+    descendants: new Set(),
     dataset: { ...dataset },
     focused: false,
     classList: {
@@ -39,19 +40,25 @@ function createFakeElement(id, { value = '', className = '', dataset = {}, hidde
       listeners.set(type, [...(listeners.get(type) || []), listener]);
     },
     async emit(type, event = {}) {
+      if (element.disabled && ['click', 'submit', 'change', 'input', 'keydown'].includes(type)) return [];
+      if (type === 'click') element.focus();
       const preparedEvent = { target: element, preventDefault() {}, stopPropagation() {}, ...event };
       const results = (listeners.get(type) || []).map(listener => listener(preparedEvent));
       return Promise.all(results);
     },
     setAttribute(name, valueToSet) { attributes.set(name, String(valueToSet)); },
     getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+    hasAttribute(name) { return attributes.has(name); },
     toggleAttribute(name, force) {
       const enabled = force === undefined ? !attributes.has(name) : Boolean(force);
       if (enabled) attributes.set(name, ''); else attributes.delete(name);
       return enabled;
     },
-    contains() { return false; },
-    focus() { element.focused = true; },
+    contains(target) { return target === element || element.descendants.has(target); },
+    focus() {
+      element.focused = true;
+      element.onFocus?.(element);
+    },
     querySelector() { return null; }
   };
   Object.defineProperty(element, 'className', {
@@ -64,10 +71,10 @@ function createFakeElement(id, { value = '', className = '', dataset = {}, hidde
   return element;
 }
 
-function createOptionsHarness({ settings, updateSettings, configResponse = { success: true } }) {
+function createOptionsHarness({ settings, loadSettings = async () => settings, updateSettings, configResponse = { success: true } }) {
   const ids = [
     'empty-state', 'servers-section', 'server-list', 'add-server-btn', 'add-first-server-btn',
-    'save-settings-btn', 'save-settings-modal', 'save-settings-form', 'image-format-preference',
+    'save-settings-btn', 'save-settings-modal', 'save-settings-dialog', 'save-settings-form', 'image-format-preference',
     'image-format-select', 'image-format-trigger', 'image-format-value', 'image-format-options',
     'filename-rule', 'filename-template-group', 'filename-template', 'filename-template-error',
     'filename-preview', 'directory-rule', 'close-save-settings-btn', 'cancel-save-settings-btn',
@@ -98,6 +105,7 @@ function createOptionsHarness({ settings, updateSettings, configResponse = { suc
   const documentListeners = new Map();
   const document = {
     documentElement: { dataset: {} },
+    activeElement: createFakeElement('document-body'),
     getElementById: id => elements[id] || null,
     querySelectorAll: selector => selector === '.format-select-option' ? formatOptions : [],
     addEventListener(type, listener) { documentListeners.set(type, [...(documentListeners.get(type) || []), listener]); },
@@ -107,6 +115,22 @@ function createOptionsHarness({ settings, updateSettings, configResponse = { suc
     createElement: () => createFakeElement('created'),
     createTextNode: text => ({ textContent: text })
   };
+  Object.values(elements).forEach(element => { element.onFocus = focused => { document.activeElement = focused; }; });
+  formatOptions.forEach(option => { option.onFocus = focused => { document.activeElement = focused; }; });
+  const modalFocusables = [
+    elements['close-save-settings-btn'],
+    elements['image-format-trigger'],
+    ...formatOptions,
+    elements['filename-rule'],
+    elements['filename-template'],
+    elements['directory-rule'],
+    elements['cancel-save-settings-btn'],
+    elements['save-save-settings-btn']
+  ];
+  elements['save-settings-modal'].querySelectorAll = () => modalFocusables;
+  elements['save-settings-modal'].descendants = new Set(modalFocusables);
+  elements['filename-template-group'].descendants.add(elements['filename-template']);
+  elements['image-format-options'].descendants = new Set(formatOptions);
   const runtimeCalls = [];
   const chrome = {
     storage: {
@@ -120,7 +144,7 @@ function createOptionsHarness({ settings, updateSettings, configResponse = { suc
     window: { matchMedia: () => ({ matches: false }) },
     localStorage: { getItem: () => null, setItem: () => {} },
     chrome,
-    AppSettings: { loadSettings: async () => settings, updateSettings },
+    AppSettings: { loadSettings, updateSettings },
     ImageFormat,
     FilenameRule,
     DirectoryRule,
@@ -135,6 +159,16 @@ function createOptionsHarness({ settings, updateSettings, configResponse = { suc
 async function flushOptionsInit() {
   await new Promise(resolve => setImmediate(resolve));
   await new Promise(resolve => setImmediate(resolve));
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 test('background loads save-rule support and routes selected formats through conversion', () => {
@@ -191,8 +225,10 @@ test('options page exposes and persists combined save settings', () => {
 
   assert.match(optionsHtml, /id="save-settings-btn"[^>]*aria-label="Save settings"[^>]*title="Save settings"/);
   assert.match(optionsHtml, /id="save-settings-modal"/);
+  assert.match(optionsHtml, /id="save-settings-dialog"[^>]*class="modal-container save-settings-container"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="save-settings-title"/);
+  assert.match(optionsHtml, /<h3 id="save-settings-title">Save settings<\/h3>/);
   assert.match(optionsHtml, /id="save-settings-form"/);
-  assert.match(optionsHtml, /<h3>Save settings<\/h3>/);
+  assert.match(optionsHtml, /<h3 id="save-settings-title">Save settings<\/h3>/);
   assert.match(optionsHtml, /id="close-save-settings-btn"/);
   assert.match(optionsHtml, /id="cancel-save-settings-btn"/);
   assert.match(optionsHtml, /id="save-save-settings-btn"/);
@@ -267,6 +303,10 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsSource, /function selectImageFormat/);
   assert.match(optionsSource, /function restoreSaveSettingsControls/);
   assert.match(optionsSource, /function updateFilenameRuleEditor/);
+  assert.match(optionsSource, /const loadRevision = \+\+saveSettingsRevision/);
+  assert.match(optionsSource, /if \(loadRevision !== saveSettingsRevision\) return false;/);
+  assert.match(optionsSource, /isSaving \|\| !saveSettingsReady/);
+  assert.match(optionsSource, /function trapSaveSettingsTab/);
   assert.match(optionsSource, /function closeSaveSettingsModal\(\)\s*\{[\s\S]*?restoreSaveSettingsControls\(\);/);
   assert.match(optionsSource, /filenameTemplateGroup\?\.toggleAttribute\(['"]hidden['"], !isCustom\)/);
   assert.match(optionsSource, /saveSaveSettingsBtn\.disabled = invalid/);
@@ -290,6 +330,7 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsCss, /\.form-error/);
   assert.match(optionsCss, /\.form-input\.is-invalid/);
   assert.match(optionsCss, /\.format-select-list\s*\{[^}]*top:\s*calc\(100% - 1px\);/s);
+  assert.match(optionsCss, /\.save-settings-container \.format-select\.is-open \.format-select-list\s*\{[^}]*position:\s*static;[^}]*margin-top:/s);
   assert.match(optionsCss, /\.format-select-chevron\s*\{[^}]*right:\s*14px;/s);
 });
 
@@ -472,6 +513,143 @@ test('save settings keeps returned state when background reload reports a warnin
   assert.equal(harness.elements['filename-rule'].value, 'original');
   assert.equal(harness.elements['filename-template'].value, '{pageTitle}.{ext}');
   assert.equal(harness.elements['directory-rule'].value, 'date');
+});
+
+test('save settings waits for a successful load and retries failures', async () => {
+  const firstLoad = deferred();
+  const readySettings = {
+    image: { saveFormat: 'png' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'date' }
+  };
+  const harness = createOptionsHarness({
+    settings: readySettings,
+    loadSettings: () => firstLoad.promise,
+    updateSettings: async () => readySettings
+  });
+  await harness.document.emit('DOMContentLoaded');
+  assert.equal(harness.elements['save-settings-btn'].disabled, true);
+  await harness.elements['save-settings-btn'].emit('click');
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), true);
+  firstLoad.resolve(readySettings);
+  await flushOptionsInit();
+  assert.equal(harness.elements['save-settings-btn'].disabled, false);
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), true);
+  await harness.elements['save-settings-btn'].emit('click');
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), false);
+
+  const failedLoad = deferred();
+  const retryLoad = deferred();
+  let loadCount = 0;
+  const retryHarness = createOptionsHarness({
+    settings: readySettings,
+    loadSettings: () => (++loadCount === 1 ? failedLoad.promise : retryLoad.promise),
+    updateSettings: async () => readySettings
+  });
+  await retryHarness.document.emit('DOMContentLoaded');
+  failedLoad.reject(new Error('storage unavailable'));
+  await flushOptionsInit();
+  assert.equal(retryHarness.elements['save-settings-btn'].disabled, false);
+  assert.equal(retryHarness.elements['save-settings-btn'].getAttribute('title'), 'Retry loading Save settings');
+  await retryHarness.elements['save-settings-btn'].emit('click');
+  assert.equal(retryHarness.elements['save-settings-btn'].disabled, true);
+  retryLoad.resolve(readySettings);
+  await flushOptionsInit();
+  assert.equal(retryHarness.elements['save-settings-modal'].classList.contains('hidden'), false);
+  assert.equal(retryHarness.elements['filename-rule'].value, 'original');
+
+});
+
+test('save settings locks the visible dialog during pending writes and restores focus and controls', async () => {
+  const pendingUpdate = deferred();
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'fixed' }
+  };
+  let updateCount = 0;
+  const harness = createOptionsHarness({
+    settings,
+    updateSettings: () => {
+      updateCount += 1;
+      return pendingUpdate.promise;
+    }
+  });
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await harness.elements['save-settings-btn'].emit('click');
+  const saving = harness.elements['save-settings-form'].emit('submit');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(updateCount, 1);
+  assert.equal(harness.elements['save-settings-form'].getAttribute('aria-busy'), 'true');
+  assert.equal(harness.elements['save-settings-dialog'].getAttribute('aria-busy'), 'true');
+  assert.equal(harness.elements['save-settings-modal'].getAttribute('aria-busy'), 'true');
+  for (const id of ['save-save-settings-btn', 'cancel-save-settings-btn', 'close-save-settings-btn', 'image-format-trigger', 'filename-rule', 'filename-template', 'directory-rule']) {
+    assert.equal(harness.elements[id].disabled, true, `${id} is disabled while saving`);
+  }
+  assert.equal(harness.formatOptions.every(option => option.disabled), true);
+  await harness.elements['save-settings-form'].emit('submit');
+  await harness.elements['cancel-save-settings-btn'].emit('click');
+  await harness.elements['close-save-settings-btn'].emit('click');
+  await harness.elements['save-settings-modal'].emit('click', { target: harness.elements['save-settings-modal'] });
+  await harness.document.emit('keydown', { key: 'Escape' });
+  assert.equal(updateCount, 1);
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), false);
+  pendingUpdate.resolve(settings);
+  await saving;
+  assert.equal(harness.elements['save-settings-modal'].classList.contains('hidden'), true);
+  assert.equal(harness.elements['save-settings-form'].getAttribute('aria-busy'), 'false');
+  assert.equal(harness.elements['save-settings-dialog'].getAttribute('aria-busy'), 'false');
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
+
+  const rejectedUpdate = deferred();
+  const failedHarness = createOptionsHarness({ settings, updateSettings: () => rejectedUpdate.promise });
+  await failedHarness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await failedHarness.elements['save-settings-btn'].emit('click');
+  const failing = failedHarness.elements['save-settings-form'].emit('submit');
+  await new Promise(resolve => setImmediate(resolve));
+  rejectedUpdate.reject(new Error('storage unavailable'));
+  await failing;
+  assert.equal(failedHarness.elements['save-settings-modal'].classList.contains('hidden'), false);
+  assert.equal(failedHarness.elements['save-settings-form'].getAttribute('aria-busy'), 'false');
+  assert.equal(failedHarness.elements['save-settings-dialog'].getAttribute('aria-busy'), 'false');
+  assert.equal(failedHarness.elements['save-save-settings-btn'].disabled, false);
+  assert.equal(failedHarness.elements['cancel-save-settings-btn'].disabled, false);
+  assert.equal(failedHarness.notificationMessage.textContent, 'Could not save Save settings.');
+});
+
+test('save settings dialog traps tab and returns focus after each permitted dismissal', async () => {
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'fixed' }
+  };
+  const harness = createOptionsHarness({ settings, updateSettings: async () => settings });
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await harness.elements['save-settings-btn'].emit('click');
+  assert.equal(harness.document.activeElement, harness.elements['image-format-trigger']);
+  harness.elements['close-save-settings-btn'].focus();
+  let prevented = false;
+  await harness.document.emit('keydown', { key: 'Tab', shiftKey: true, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(harness.document.activeElement, harness.elements['save-save-settings-btn']);
+  harness.elements['save-save-settings-btn'].focus();
+  await harness.document.emit('keydown', { key: 'Tab', preventDefault() {} });
+  assert.equal(harness.document.activeElement, harness.elements['close-save-settings-btn']);
+
+  await harness.elements['cancel-save-settings-btn'].emit('click');
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.elements['close-save-settings-btn'].emit('click');
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.document.emit('keydown', { key: 'Escape' });
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.elements['save-settings-modal'].emit('click', { target: harness.elements['save-settings-modal'] });
+  assert.equal(harness.document.activeElement, harness.elements['save-settings-btn']);
 });
 
 test('theme toggle uses a balanced moon icon without resizing between themes', () => {

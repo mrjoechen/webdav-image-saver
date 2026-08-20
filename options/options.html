@@ -47,7 +47,7 @@
                     </div>
                 </div>
                 <div class="header-actions">
-                    <button class="icon-button" id="save-settings-btn" type="button" aria-label="Save settings" title="Save settings">
+                    <button class="icon-button" id="save-settings-btn" type="button" aria-label="Save settings" title="Save settings" disabled>
                         <svg class="ui-icon"><use href="#icon-settings"></use></svg>
                     </button>
                     <a class="icon-button donation-link" href="https://ko-fi.com/joechen" target="_blank" rel="noopener noreferrer" aria-label="Support this project on Ko-fi" title="Support on Ko-fi">
@@ -193,9 +193,9 @@
 
     <!-- Global Save Settings -->
     <div id="save-settings-modal" class="modal-overlay hidden">
-        <div class="modal-container save-settings-container">
+        <div id="save-settings-dialog" class="modal-container save-settings-container" role="dialog" aria-modal="true" aria-labelledby="save-settings-title" aria-busy="false">
             <div class="modal-header">
-                <h3>Save settings</h3>
+                <h3 id="save-settings-title">Save settings</h3>
                 <button class="icon-button modal-close" id="close-save-settings-btn" type="button" aria-label="Close save settings" title="Close">
                     <svg class="ui-icon"><use href="#icon-close"></use></svg>
                 </button>

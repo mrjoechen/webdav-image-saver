@@ -562,6 +562,18 @@ button {
   overflow-y: auto;
 }
 
+.save-settings-container .format-select.is-open .format-select-trigger {
+  border-radius: var(--radius-sm);
+}
+
+.save-settings-container .format-select.is-open .format-select-list {
+  position: static;
+  margin-top: 6px;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
 .save-settings-container .form-group {
   margin-bottom: 0;
 }

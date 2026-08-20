@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addFirstServerBtn: document.getElementById('add-first-server-btn'),
     saveSettingsBtn: document.getElementById('save-settings-btn'),
     saveSettingsModal: document.getElementById('save-settings-modal'),
+    saveSettingsDialog: document.getElementById('save-settings-dialog'),
     saveSettingsForm: document.getElementById('save-settings-form'),
     imageFormatPreference: document.getElementById('image-format-preference'),
     imageFormatSelect: document.getElementById('image-format-select'),
@@ -77,6 +78,11 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     directory: { rule: 'fixed' }
   };
+  let saveSettingsReady = false;
+  let saveSettingsLoading = false;
+  let saveSettingsRevision = 0;
+  let isSaving = false;
+  let saveSettingsOpener = null;
 
   // Initialize the app
   init();
@@ -84,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function init() {
     initTheme();
     attachEventListeners();
+    setSaveSettingsButtonState({ disabled: true, title: 'Loading Save settings' });
     await Promise.all([loadServers(), loadSaveSettings()]);
   }
 
@@ -132,14 +139,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ESC key to close modal
     document.addEventListener('keydown', (e) => {
+      const saveSettingsVisible = !elements.saveSettingsModal?.classList.contains('hidden');
+      if (saveSettingsVisible) {
+        if (isSaving) {
+          if (e.key === 'Escape') e.preventDefault();
+          return;
+        }
+        if (e.key === 'Tab') {
+          trapSaveSettingsTab(e);
+          return;
+        }
+        if (e.key === 'Escape') {
+          closeSaveSettingsModal();
+          return;
+        }
+      }
+
       if (e.key !== 'Escape') return;
 
       if (isImageFormatSelectOpen()) {
         closeImageFormatSelect({ restoreFocus: true });
       } else if (!elements.folderPickerModal?.classList.contains('hidden')) {
         closeFolderPicker();
-      } else if (!elements.saveSettingsModal?.classList.contains('hidden')) {
-        closeSaveSettingsModal();
       } else if (!elements.modal?.classList.contains('hidden')) {
         closeModal();
       }
@@ -188,27 +209,107 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  async function loadSaveSettings() {
+  function setSaveSettingsButtonState({ disabled, title, label = title } = {}) {
+    if (!elements.saveSettingsBtn) return;
+    elements.saveSettingsBtn.disabled = Boolean(disabled);
+    if (title) elements.saveSettingsBtn.setAttribute('title', title);
+    if (label) elements.saveSettingsBtn.setAttribute('aria-label', label);
+  }
+
+  async function loadSaveSettings({ openWhenReady = false, opener = null } = {}) {
+    const loadRevision = ++saveSettingsRevision;
+    saveSettingsLoading = true;
+    setSaveSettingsButtonState({ disabled: true, title: 'Loading Save settings' });
     try {
       const settings = await AppSettings.loadSettings(chrome.storage.local);
+      if (loadRevision !== saveSettingsRevision) return false;
       persistedSaveSettings = copySaveSettings(settings);
+      saveSettingsReady = true;
+      saveSettingsLoading = false;
+      setSaveSettingsButtonState({ disabled: false, title: 'Save settings' });
       restoreSaveSettingsControls();
+      if (openWhenReady) openSaveSettingsModal({ opener });
+      return true;
     } catch (error) {
+      if (loadRevision !== saveSettingsRevision) return false;
+      saveSettingsReady = false;
+      saveSettingsLoading = false;
+      setSaveSettingsButtonState({
+        disabled: false,
+        title: 'Retry loading Save settings',
+        label: 'Retry loading Save settings'
+      });
       console.error('Error loading save settings:', error);
       showNotification('Could not load Save settings.', 'error');
+      return false;
     }
   }
 
-  function openSaveSettingsModal() {
+  function openSaveSettingsModal({ opener = document.activeElement } = {}) {
+    if (isSaving || saveSettingsLoading) return;
+    if (!saveSettingsReady) {
+      loadSaveSettings({ openWhenReady: true, opener });
+      return;
+    }
+    saveSettingsOpener = opener || elements.saveSettingsBtn;
     restoreSaveSettingsControls();
     elements.saveSettingsModal?.classList.remove('hidden');
     elements.imageFormatTrigger?.focus();
   }
 
   function closeSaveSettingsModal() {
+    if (isSaving) return;
     closeImageFormatSelect();
     elements.saveSettingsModal?.classList.add('hidden');
     restoreSaveSettingsControls();
+    const opener = saveSettingsOpener || elements.saveSettingsBtn;
+    saveSettingsOpener = null;
+    opener?.focus();
+  }
+
+  function getSaveSettingsFocusableElements() {
+    const candidates = [...(elements.saveSettingsModal?.querySelectorAll('button, input, select, [tabindex]') || [])];
+    return candidates.filter(control => {
+      if (control.disabled || control === elements.imageFormatPreference) return false;
+      if (elements.filenameTemplateGroup?.hasAttribute('hidden') && elements.filenameTemplateGroup.contains(control)) return false;
+      if (elements.imageFormatOptions?.classList.contains('hidden') && elements.imageFormatOptions.contains(control)) return false;
+      return true;
+    });
+  }
+
+  function trapSaveSettingsTab(event) {
+    const focusable = getSaveSettingsFocusableElements();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function setSaveSettingsBusy(saving) {
+    const controls = [
+      elements.saveSaveSettingsBtn,
+      elements.cancelSaveSettingsBtn,
+      elements.closeSaveSettingsBtn,
+      elements.imageFormatTrigger,
+      elements.filenameRule,
+      elements.filenameTemplate,
+      elements.directoryRule,
+      ...imageFormatOptionElements
+    ];
+    elements.saveSettingsDialog?.setAttribute('aria-busy', String(saving));
+    elements.saveSettingsModal?.setAttribute('aria-busy', String(saving));
+    elements.saveSettingsForm?.setAttribute('aria-busy', String(saving));
+    if (saving) closeImageFormatSelect();
+    controls.forEach(control => {
+      if (control) control.disabled = saving;
+    });
+    if (!saving) updateFilenameRuleEditor();
   }
 
   function restoreSaveSettingsControls() {
@@ -254,6 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function toggleImageFormatSelect() {
+    if (isSaving) return;
     if (isImageFormatSelectOpen()) {
       closeImageFormatSelect();
     } else {
@@ -262,11 +364,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function selectImageFormat(value) {
+    if (isSaving) return;
     setImageFormatControl(value);
     closeImageFormatSelect({ restoreFocus: true });
   }
 
   function handleImageFormatTriggerKeydown(event) {
+    if (isSaving) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       openImageFormatSelect({ focusSelected: true });
@@ -277,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleImageFormatOptionKeydown(event, index) {
+    if (isSaving) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const offset = event.key === 'ArrowDown' ? 1 : -1;
@@ -312,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.filenameTemplateError.textContent = invalid ? validation.error : '';
       elements.filenameTemplateError.classList.toggle('hidden', !invalid);
     }
-    if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = invalid;
+    if (elements.saveSaveSettingsBtn && !isSaving) elements.saveSaveSettingsBtn.disabled = invalid;
     updateFilenamePreview();
     return validation;
   }
@@ -334,6 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function saveSaveSettings(event) {
     event.preventDefault();
+    if (isSaving || !saveSettingsReady) return;
     const filenameValidation = updateFilenameRuleEditor();
     const filenameRule = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value);
     if (filenameRule === 'custom' && !filenameValidation.valid) {
@@ -346,7 +452,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const directoryRule = DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value);
 
     try {
-      if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = true;
+      isSaving = true;
+      ++saveSettingsRevision;
+      setSaveSettingsBusy(true);
       const settings = await AppSettings.updateSettings(chrome.storage.local, {
         image: {
           saveFormat: selectedPreference
@@ -360,6 +468,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
       persistedSaveSettings = copySaveSettings(settings);
+      isSaving = false;
+      setSaveSettingsBusy(false);
       closeSaveSettingsModal();
       const backgroundUpdated = await notifyBackgroundConfigUpdated();
       showNotification(
@@ -367,10 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundUpdated ? 'success' : 'warning'
       );
     } catch (error) {
+      isSaving = false;
+      setSaveSettingsBusy(false);
       console.error('Error saving Save settings:', error);
       showNotification('Could not save Save settings.', 'error');
-    } finally {
-      if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = false;
     }
   }
 
