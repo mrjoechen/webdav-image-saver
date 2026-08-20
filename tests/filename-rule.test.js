@@ -7,7 +7,9 @@ const now = new Date(2026, 7, 20, 14, 5, 9);
 test('exports frozen rules, variables, and default template', () => {
     assert.deepEqual(rules.FILENAME_RULES, ['automatic', 'original', 'custom']);
     assert.ok(Object.isFrozen(rules.FILENAME_RULES));
-    assert.deepEqual(Object.keys(rules.TEMPLATE_VARIABLES), ['originalName', 'date', 'time', 'domain', 'pageTitle', 'width', 'height', 'ext']);
+    assert.deepEqual(rules.TEMPLATE_VARIABLES, ['originalName', 'date', 'time', 'domain', 'pageTitle', 'width', 'height', 'ext']);
+    assert.ok(Array.isArray(rules.TEMPLATE_VARIABLES));
+    assert.ok(Object.isFrozen(rules.TEMPLATE_VARIABLES));
     assert.equal(rules.DEFAULT_CUSTOM_TEMPLATE, '{originalName}_{date}_{domain}.{ext}');
 });
 
@@ -41,6 +43,11 @@ test('generates legacy automatic and original names', () => {
     assert.equal(rules.generateFilename({ rule: 'original', imageUrl: 'https://x/holiday.photo.png', pageUrl: 'https://example.com', extension: 'jpg', now }), 'holiday.photo.jpg');
 });
 
+test('uses legacy timestamp fallback when either URL is invalid', () => {
+    assert.equal(rules.generateFilename({ rule: 'automatic', imageUrl: 'invalid', pageUrl: 'https://example.com', extension: 'jpg', now }), `image_${now.getTime()}_fallback.jpg`);
+    assert.equal(rules.generateFilename({ rule: 'automatic', imageUrl: 'https://x/a.jpg', pageUrl: 'invalid', extension: 'jpg', now }), `image_${now.getTime()}_fallback.jpg`);
+});
+
 test('expands custom variables and guarantees extension', () => {
     const args = { rule: 'custom', template: '{originalName}-{date}-{time}-{domain}-{pageTitle}-{width}x{height}.{ext}', imageUrl: 'https://x/photo.png', pageUrl: 'https://www.example.com', pageTitle: 'A page', width: 640, height: 480, extension: 'jpg', now };
     assert.equal(rules.generateFilename(args), 'photo-20260820-140509-example.com-A page-640x480.jpg');
@@ -64,10 +71,14 @@ test('reads dimensions and closes bitmap, including failures', async () => {
     assert.equal(closed, true);
     assert.deepEqual(await rules.readImageDimensions({}, undefined), { width: 'unknown', height: 'unknown' });
     assert.deepEqual(await rules.readImageDimensions({}, async () => { throw new Error('bad'); }), { width: 'unknown', height: 'unknown' });
+    assert.deepEqual(await rules.readImageDimensions({}, async () => ({ width: 1, height: 2, close() { throw new Error('close failed'); } })), { width: 1, height: 2 });
 });
 
 test('falls back to automatic for invalid custom output/template', () => {
     const args = { rule: 'custom', template: '{bad}', imageUrl: 'https://x/a.jpg', pageUrl: 'bad', extension: 'jpg', now };
-    assert.equal(rules.generateFilename(args), 'image_20260820140509_unknown-site.jpg');
-    assert.equal(rules.generateFilename({ ...args, template: '***' }), 'image_20260820140509_unknown-site.jpg');
+    assert.equal(rules.generateFilename(args), `image_${now.getTime()}_fallback.jpg`);
+    assert.equal(rules.generateFilename({ ...args, template: '***' }), `image_${now.getTime()}_fallback.jpg`);
+    const pathological = rules.sanitizeFilename('...', 'jpg', ' '.repeat(400) + '...');
+    assert.ok(pathological.endsWith('.jpg'));
+    assert.ok(Buffer.byteLength(pathological, 'utf8') <= 255);
 });

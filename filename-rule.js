@@ -4,10 +4,7 @@
     root.FilenameRule = filenameRule;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     const FILENAME_RULES = Object.freeze(['automatic', 'original', 'custom']);
-    const TEMPLATE_VARIABLES = Object.freeze({
-        originalName: 'originalName', date: 'date', time: 'time', domain: 'domain',
-        pageTitle: 'pageTitle', width: 'width', height: 'height', ext: 'ext'
-    });
+    const TEMPLATE_VARIABLES = Object.freeze(['originalName', 'date', 'time', 'domain', 'pageTitle', 'width', 'height', 'ext']);
     const DEFAULT_CUSTOM_TEMPLATE = '{originalName}_{date}_{domain}.{ext}';
     const VARIABLE_PATTERN = /\{([^{}]+)\}/g;
     const FORBIDDEN = /[\u0000-\u001f\u007f<>:"/\\|?*]/g;
@@ -21,7 +18,7 @@
         let match;
         VARIABLE_PATTERN.lastIndex = 0;
         while ((match = VARIABLE_PATTERN.exec(template))) {
-            if (!Object.prototype.hasOwnProperty.call(TEMPLATE_VARIABLES, match[1])) {
+            if (!TEMPLATE_VARIABLES.includes(match[1])) {
                 return { valid: false, error: `Unsupported template variable: ${match[1]}.` };
             }
         }
@@ -90,9 +87,7 @@
         const suffix = `.${ext}`;
         const basename = result.slice(0, -suffix.length);
         result = `${utf8Truncate(basename, 255 - utf8Bytes(suffix))}${suffix}`;
-        if (result === suffix || !result.slice(0, -suffix.length).trim()) {
-            return sanitizeFilename(fallback === result ? `image.${ext}` : fallback, ext, `image.${ext}`);
-        }
+        if (result === suffix || !result.slice(0, -suffix.length).trim()) result = `image${suffix}`;
         return result;
     }
 
@@ -105,7 +100,8 @@
         };
     }
 
-    function automaticFilename({ pageUrl, extension: actualExtension, now }) {
+    function automaticFilename({ imageUrl, pageUrl, extension: actualExtension, now }) {
+        if (!parseUrl(imageUrl) || !parseUrl(pageUrl)) return `image_${now instanceof Date ? now.getTime() : Date.now()}_fallback.${extension(actualExtension)}`;
         const url = parseUrl(pageUrl);
         const host = url && url.hostname ? url.hostname.replace(/\./g, '_') : 'unknown-site';
         const parts = dateParts(now);
@@ -114,7 +110,7 @@
 
     function generateFilename({ rule, template, imageUrl, pageUrl, pageTitle, width, height, extension: actualExtension, now }) {
         const ext = extension(actualExtension || extractSourceExtension(imageUrl));
-        const automatic = automaticFilename({ pageUrl, extension: ext, now });
+        const automatic = automaticFilename({ imageUrl, pageUrl, extension: ext, now });
         let rendered;
         const normalizedRule = normalizeFilenameRule(rule);
         if (normalizedRule === 'automatic') rendered = automatic;
@@ -140,7 +136,9 @@
         } catch (_) {
             return { width: 'unknown', height: 'unknown' };
         } finally {
-            if (bitmap && typeof bitmap.close === 'function') bitmap.close();
+            if (bitmap && typeof bitmap.close === 'function') {
+                try { bitmap.close(); } catch (_) { /* cleanup failures must not escape */ }
+            }
         }
     }
 
