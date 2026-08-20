@@ -158,6 +158,25 @@ test('future-schema update preserves future values while applying unrelated chan
   assert.equal(settings.upload.countdownSeconds, 8);
 });
 
+test('schema downgrade updates preserve future values before normalization', async () => {
+  const storage = createStorage({ appSettings: {
+    schemaVersion: 4,
+    image: { saveFormat: 'avif' },
+    filename: { rule: 'content-hash', customTemplate: '{futureVariable}' },
+    directory: { rule: 'project' }
+  } });
+  const settings = await updateSettings(storage, {
+    schemaVersion: 1,
+    upload: { countdownSeconds: 9 }
+  });
+  assert.equal(settings.schemaVersion, 4);
+  assert.equal(settings.image.saveFormat, 'avif');
+  assert.equal(settings.filename.rule, 'content-hash');
+  assert.equal(settings.filename.customTemplate, '{futureVariable}');
+  assert.equal(settings.directory.rule, 'project');
+  assert.equal(settings.upload.countdownSeconds, 9);
+});
+
 test('non-object groups safely normalize and partial updates preserve nested future fields', async () => {
   const storage = createStorage({
     appSettings: {

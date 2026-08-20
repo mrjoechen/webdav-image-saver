@@ -121,7 +121,12 @@
     function updateSettings(storage, updates) {
         const updateTask = settingsUpdateQueue.then(async () => {
             const currentSettings = await loadSettings(storage);
-            const nextSettings = normalizeSettings(mergeSettings(currentSettings, updates));
+            const mergedSettings = mergeSettings(currentSettings, updates);
+            const requestedSchemaVersion = Number.isInteger(mergedSettings.schemaVersion) && mergedSettings.schemaVersion > 0
+                ? mergedSettings.schemaVersion
+                : SETTINGS_SCHEMA_VERSION;
+            mergedSettings.schemaVersion = Math.max(currentSettings.schemaVersion, requestedSchemaVersion);
+            const nextSettings = normalizeSettings(mergedSettings);
             nextSettings.schemaVersion = Math.max(
                 currentSettings.schemaVersion,
                 nextSettings.schemaVersion
