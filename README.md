@@ -76,6 +76,8 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 - Test WebDAV connectivity before saving.
 - Browse multi-level WebDAV folders and choose a target folder.
 - Save original images, ask for a format each time, or convert static images to PNG, JPG, or WebP.
+- Choose automatic naming, preserve the original filename, or define a reusable filename template.
+- Keep each server's configured target folder fixed, or organize uploads automatically by date, website, or both.
 - Preserve animated and unsupported images in their original format with a visible warning.
 - Show a short countdown bubble before upload, with a cancel action.
 - Open the settings page from the extension toolbar icon.
@@ -112,15 +114,36 @@ Use HTTPS WebDAV URLs whenever possible. HTTP may work technically, but it sends
 4. If **Ask every time** is enabled, choose **Original**, **PNG**, **JPG**, or **WebP** in the page prompt.
 5. Wait for the countdown or click **Cancel**.
 
-Use the settings button in the options page header to choose the global image format preference. PNG conversion is lossless. JPG and WebP use quality `0.92`; transparent areas are filled white when converting to JPG. Animated GIF, APNG, animated WebP, and images the browser cannot convert are uploaded unchanged and reported with a warning.
+Use the settings button in the options page header to choose the global image format, filename, and save-directory preferences. PNG conversion is lossless. JPG and WebP use quality `0.92`; transparent areas are filled white when converting to JPG. Animated GIF, APNG, animated WebP, and images the browser cannot convert are uploaded unchanged and reported with a warning.
 
 All detection and conversion runs locally in the browser. No hosted conversion service is used.
 
-The extension generates filenames like:
+### File naming rules
+
+The global **File naming rule** setting offers three modes:
+
+- **Automatic** (default): keeps the extension's existing automatic naming behavior, for example `image_20260820153045_www_example_com.jpg`.
+- **Original filename**: reuses the source image's filename without its old extension.
+- **Custom template**: builds the filename from a template such as:
 
 ```text
-image_YYYYMMDDHHMMSS_example_com.jpg
+{originalName}_{date}_{domain}.{ext}
 ```
+
+Custom templates support `{originalName}`, `{date}` (`YYYYMMDD`), `{time}` (`HHMMSS`), `{domain}`, `{pageTitle}`, `{width}`, `{height}`, and `{ext}`. The `{domain}` value removes a leading `www.` while preserving other subdomains.
+
+The final extension always matches the image format that is actually uploaded, even if the source filename or template specifies something else. Characters unsupported by WebDAV filesystems are cleaned automatically before upload.
+
+### Save directory rules
+
+The global **Save directory rule** is applied relative to each selected server's own configured target folder. For example, if that server's target is `/Images`, the available modes are:
+
+- **Fixed directory**: `/Images` (the configured target itself).
+- **By date**: `/Images/2026/08`.
+- **By website**: `/Images/example.com`.
+- **By website and date**: `/Images/example.com/2026/08`.
+
+`/Images` is only an example of a user-configured server target; it is not a hardcoded directory. Website folders remove a leading `www.` from the page domain. For every non-fixed rule, missing dynamic subfolders are created automatically before the image is uploaded.
 
 ## Permissions
 
@@ -149,6 +172,8 @@ Run syntax checks before packaging:
 ```bash
 node --test
 node --check image-format.js
+node --check filename-rule.js
+node --check directory-rule.js
 node --check settings.js
 node --check background.js
 node --check content_script.js
@@ -158,7 +183,7 @@ node --check options/options.js
 Check for remote resources before Chrome Web Store submission:
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js settings.js background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js options assets
 ```
 
 The options page should use only packaged files and inline SVG symbols. Do not add remotely hosted scripts, styles, fonts, or icon fonts.
@@ -170,6 +195,8 @@ Recommended package contents:
 ```text
 manifest.json
 image-format.js
+filename-rule.js
+directory-rule.js
 settings.js
 background.js
 content_script.js
@@ -186,7 +213,7 @@ Manual packaging example:
 
 ```bash
 mkdir -p dist/webdav-image-saver
-cp manifest.json image-format.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
+cp manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
 cp -R assets icons options dist/webdav-image-saver/
 cd dist
 zip -X -r webdav-image-saver.zip webdav-image-saver

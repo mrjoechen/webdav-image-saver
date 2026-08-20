@@ -26,6 +26,15 @@ WebDAV Image Saver makes it incredibly easy to save web images directly to your 
 - Static image conversion runs locally in your browser
 - Animated or unsupported images stay unchanged and show a clear warning
 
+**🏷️ Flexible File Naming**
+- Keep automatic naming, reuse the original filename, or build names from a custom template
+- Use image, page, date, website, and dimension variables; unsafe WebDAV characters are cleaned automatically
+- File extensions always match the image format actually uploaded
+
+**📁 Automatic Folder Organization**
+- Keep each server's configured target folder fixed, or organize images by date, website, or both
+- Missing dynamic subfolders are created automatically inside that server's configured target folder
+
 **🎛️ Multiple Server Support**
 - Configure unlimited WebDAV servers
 - Custom folder organization for each server
@@ -40,7 +49,7 @@ WebDAV Image Saver makes it incredibly easy to save web images directly to your 
 
 1. **Configure Your Server**: Add your WebDAV server details in the options page
 2. **Test Connection**: Verify your settings work before saving
-3. **Choose a Format**: Keep the original, set PNG/JPG/WebP, or ask before each save
+3. **Choose Save Settings**: Set the image format, filename rule, and folder organization
 4. **Right-Click & Save**: Right-click any image on the web to save it to your server
 5. **Instant Upload**: Images are uploaded directly with visual confirmation
 

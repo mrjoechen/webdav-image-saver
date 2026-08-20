@@ -77,6 +77,8 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 - 保存前可测试 WebDAV 连接。
 - 支持浏览多级 WebDAV 目录并选择目标文件夹。
 - 支持保留原图、每次保存前选择格式，或将静态图片转换为 PNG、JPG、WebP。
+- 支持默认自动命名、保留原始文件名或使用自定义文件名模板。
+- 可保持各服务器配置的目标目录不变，或自动按日期、网站、网站与日期组合整理图片。
 - 动图和浏览器不支持转换的图片会保留原格式，并显示明确提示。
 - 上传前显示短暂倒计时气泡，并支持取消。
 - 可从扩展工具栏图标打开设置页面。
@@ -113,15 +115,36 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 4. 如果启用了 **Ask every time**，在网页提示中选择 **Original**、**PNG**、**JPG** 或 **WebP**。
 5. 等待倒计时结束，或点击 **Cancel** 取消。
 
-可通过设置页顶部的设置按钮选择全局图片格式。PNG 使用无损转换；JPG 和 WebP 的质量为 `0.92`；转换为 JPG 时，透明区域会填充为白色。GIF、APNG、动画 WebP 以及浏览器无法转换的图片会保持原文件不变，并显示提示。
+可通过设置页顶部的设置按钮选择全局图片格式、文件命名规则和保存目录规则。PNG 使用无损转换；JPG 和 WebP 的质量为 `0.92`；转换为 JPG 时，透明区域会填充为白色。GIF、APNG、动画 WebP 以及浏览器无法转换的图片会保持原文件不变，并显示提示。
 
 格式识别和转换都在浏览器本地完成，不使用任何在线转换服务。
 
-扩展会生成类似下面的文件名：
+### 文件命名规则
+
+全局 **文件命名规则** 提供三种模式：
+
+- **默认自动命名**：保持扩展原有的自动命名行为，例如 `image_20260820153045_www_example_com.jpg`。
+- **原始文件名**：沿用来源图片去掉旧扩展名后的文件名。
+- **自定义模板**：使用类似下面的模板生成文件名：
 
 ```text
-image_YYYYMMDDHHMMSS_example_com.jpg
+{originalName}_{date}_{domain}.{ext}
 ```
+
+自定义模板可使用 `{originalName}`、`{date}`（`YYYYMMDD`）、`{time}`（`HHMMSS`）、`{domain}`、`{pageTitle}`、`{width}`、`{height}` 和 `{ext}`。`{domain}` 会去除开头的 `www.`，其他子域名会保留。
+
+无论来源文件名或模板如何填写，最终扩展名始终匹配实际上传的图片格式。上传前会自动清理 WebDAV 文件系统不支持的字符。
+
+### 保存目录规则
+
+全局 **保存目录规则** 始终相对于所选服务器各自已配置的目标目录生效。例如，该服务器目标目录配置为 `/Images` 时，可以选择：
+
+- **固定目录**：`/Images`（直接使用已配置的目标目录）。
+- **按日期**：`/Images/2026/08`。
+- **按网站**：`/Images/example.com`。
+- **按网站和日期组合**：`/Images/example.com/2026/08`。
+
+`/Images` 只是用户配置的服务器目标目录示例，并非扩展硬编码的固定目录。网站目录会去除页面域名开头的 `www.`。选择任一非固定目录规则后，扩展会在上传图片前自动创建缺失的动态子目录。
 
 ## 权限
 
@@ -150,6 +173,8 @@ image_YYYYMMDDHHMMSS_example_com.jpg
 ```bash
 node --test
 node --check image-format.js
+node --check filename-rule.js
+node --check directory-rule.js
 node --check settings.js
 node --check background.js
 node --check content_script.js
@@ -159,7 +184,7 @@ node --check options/options.js
 提交 Chrome Web Store 前检查远程资源：
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js settings.js background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js options assets
 ```
 
 设置页面应只使用随包提供的文件和内联 SVG symbols。不要添加远程托管的脚本、样式、字体或图标字体。
@@ -171,6 +196,8 @@ rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.jso
 ```text
 manifest.json
 image-format.js
+filename-rule.js
+directory-rule.js
 settings.js
 background.js
 content_script.js
@@ -187,7 +214,7 @@ STORE_DESCRIPTION.md
 
 ```bash
 mkdir -p dist/webdav-image-saver
-cp manifest.json image-format.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
+cp manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
 cp -R assets icons options dist/webdav-image-saver/
 cd dist
 zip -X -r webdav-image-saver.zip webdav-image-saver
