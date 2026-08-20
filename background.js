@@ -771,8 +771,8 @@ function isWebdavCollectionResponse(responseText) {
         if (xml.startsWith('<?', tagStart)) {
             const declarationEnd = xml.indexOf('?>', tagStart + 2);
             if (declarationEnd < 0) return false;
-            const instructionSource = xml.slice(tagStart + 2, declarationEnd).trim();
-            const instructionMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=\s|$)/.exec(instructionSource);
+            const instructionSource = xml.slice(tagStart + 2, declarationEnd);
+            const instructionMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=[\x20\x09\x0D\x0A]|$)/.exec(instructionSource);
             if (!instructionMatch) return false;
             const instructionTarget = instructionMatch[1];
             if (instructionTarget === 'xml') {
@@ -789,13 +789,13 @@ function isWebdavCollectionResponse(responseText) {
 
         const tagEnd = findXmlTagEnd(xml, tagStart + 1);
         if (tagEnd < 0) return false;
-        const tagSource = xml.slice(tagStart + 1, tagEnd).trim();
+        const tagSource = trimXmlWhitespace(xml.slice(tagStart + 1, tagEnd));
         position = tagEnd + 1;
         if (!tagSource) return false;
 
         if (tagSource.startsWith('!')) return false;
         if (tagSource.startsWith('/')) {
-            const closingName = tagSource.slice(1).trim();
+            const closingName = trimXmlWhitespace(tagSource.slice(1));
             if (!isXmlQualifiedName(closingName)) return false;
             const frame = namespaceStack.pop();
             if (!frame || frame.qualifiedName !== closingName) return false;
@@ -804,8 +804,8 @@ function isWebdavCollectionResponse(responseText) {
         }
 
         const selfClosing = /\/$/.test(tagSource);
-        const startTagSource = selfClosing ? tagSource.slice(0, -1).trimEnd() : tagSource;
-        const nameMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=\s|$)/.exec(startTagSource);
+        const startTagSource = selfClosing ? trimXmlWhitespace(tagSource.slice(0, -1)) : tagSource;
+        const nameMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=[\x20\x09\x0D\x0A]|$)/.exec(startTagSource);
         if (!nameMatch) return false;
 
         const qualifiedName = nameMatch[1];
@@ -843,8 +843,16 @@ function isXmlWhitespace(value) {
     return /^[\x20\x09\x0D\x0A]*$/.test(value);
 }
 
+function isXmlWhitespaceCharacter(value) {
+    return value === ' ' || value === '\t' || value === '\r' || value === '\n';
+}
+
+function trimXmlWhitespace(value) {
+    return String(value).replace(/^[\x20\x09\x0D\x0A]+|[\x20\x09\x0D\x0A]+$/g, '');
+}
+
 function isValidXmlDeclaration(instructionSource) {
-    return /^xml\s+version\s*=\s*(['"])(?:1\.0|1\.1)\1(?:\s+encoding\s*=\s*(['"])[A-Za-z][A-Za-z0-9._-]*\2)?(?:\s+standalone\s*=\s*(['"])(?:yes|no)\3)?$/.test(instructionSource);
+    return /^xml[\x20\x09\x0D\x0A]+version[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])(?:1\.0|1\.1)\1(?:[\x20\x09\x0D\x0A]+encoding[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])[A-Za-z][A-Za-z0-9._-]*\2)?(?:[\x20\x09\x0D\x0A]+standalone[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])(?:yes|no)\3)?[\x20\x09\x0D\x0A]*$/.test(instructionSource);
 }
 
 function findXmlTagEnd(xml, start) {
@@ -872,7 +880,7 @@ function parseXmlNamespaceDeclarations(attributeSource) {
     let position = 0;
 
     while (position < attributeSource.length) {
-        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        while (position < attributeSource.length && isXmlWhitespaceCharacter(attributeSource[position])) position += 1;
         if (position >= attributeSource.length) break;
 
         const attributeMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(attributeSource.slice(position));
@@ -882,10 +890,10 @@ function parseXmlNamespaceDeclarations(attributeSource) {
         seenAttributes.add(attributeName);
         position += attributeName.length;
 
-        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        while (position < attributeSource.length && isXmlWhitespaceCharacter(attributeSource[position])) position += 1;
         if (attributeSource[position] !== '=') return null;
         position += 1;
-        while (position < attributeSource.length && /\s/.test(attributeSource[position])) position += 1;
+        while (position < attributeSource.length && isXmlWhitespaceCharacter(attributeSource[position])) position += 1;
         const quote = attributeSource[position];
         if (quote !== '"' && quote !== "'") return null;
         position += 1;

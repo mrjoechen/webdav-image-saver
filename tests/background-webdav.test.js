@@ -304,6 +304,35 @@ test('validates WebDAV XML declarations before trusting a collection response', 
   }
 });
 
+test('enforces XML S whitespace in WebDAV processing instructions and declarations', async () => {
+  const collectionRoot = '<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>';
+  const invalidBodies = [
+    `<? xml version="1.0"?>${collectionRoot}`,
+    `\v<?xml version="1.0"?>${collectionRoot}`,
+    `\u00A0<?xml version="1.0"?>${collectionRoot}`,
+    `<?xml\vversion="1.0"?>${collectionRoot}`,
+    `<?xml\u00A0version="1.0"?>${collectionRoot}`
+  ];
+
+  for (const body of invalidBodies) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+    });
+
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    assert.equal(calls, 4);
+  }
+
+  const validXmlSBody = `<?xml\tversion\t=\t"1.0"\r\nencoding\t=\t"utf-8"\nstandalone\t=\t"yes"\r?>${collectionRoot}`;
+  const validWorker = await createWorker(async (_url, options) => (
+    options.method === 'MKCOL' ? response(405) : response(207, '', validXmlSBody)
+  ));
+  await validWorker.ensureWebdavDirectories(server, ['/Images']);
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;
