@@ -47,7 +47,7 @@
                     </div>
                 </div>
                 <div class="header-actions">
-                    <button class="icon-button" id="image-format-settings-btn" type="button" aria-label="Image format settings" title="Image format">
+                    <button class="icon-button" id="save-settings-btn" type="button" aria-label="Save settings" title="Save settings">
                         <svg class="ui-icon"><use href="#icon-settings"></use></svg>
                     </button>
                     <a class="icon-button donation-link" href="https://ko-fi.com/joechen" target="_blank" rel="noopener noreferrer" aria-label="Support this project on Ko-fi" title="Support on Ko-fi">
@@ -191,67 +191,107 @@
         </div>
     </div>
 
-    <!-- Global Image Format Settings -->
-    <div id="image-format-modal" class="modal-overlay hidden">
-        <div class="modal-container format-settings-container">
+    <!-- Global Save Settings -->
+    <div id="save-settings-modal" class="modal-overlay hidden">
+        <div class="modal-container save-settings-container">
             <div class="modal-header">
-                <h3>Image format</h3>
-                <button class="icon-button modal-close" id="close-image-format-btn" type="button" aria-label="Close image format settings" title="Close">
+                <h3>Save settings</h3>
+                <button class="icon-button modal-close" id="close-save-settings-btn" type="button" aria-label="Close save settings" title="Close">
                     <svg class="ui-icon"><use href="#icon-close"></use></svg>
                 </button>
             </div>
 
-            <form id="image-format-form" class="modal-content">
-                <div class="form-group">
-                    <label id="image-format-label" for="image-format-trigger">Save images as</label>
-                    <input type="hidden" id="image-format-preference" value="original">
-                    <div class="format-select" id="image-format-select">
-                        <button
-                            type="button"
-                            class="format-select-trigger"
-                            id="image-format-trigger"
-                            role="combobox"
-                            aria-haspopup="listbox"
-                            aria-expanded="false"
-                            aria-controls="image-format-options"
-                            aria-labelledby="image-format-label image-format-value"
-                        >
-                            <span id="image-format-value">Original</span>
-                            <svg class="ui-icon format-select-chevron" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
-                        </button>
-                        <div
-                            class="format-select-list hidden"
-                            id="image-format-options"
-                            role="listbox"
-                            aria-labelledby="image-format-label"
-                        >
-                            <button type="button" class="format-select-option" role="option" data-value="original" aria-selected="true">
-                                <span>Original</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+            <form id="save-settings-form" class="modal-content">
+                <section class="settings-section" aria-labelledby="image-format-section-title">
+                    <h4 id="image-format-section-title">Image format</h4>
+                    <div class="form-group">
+                        <label id="image-format-label" for="image-format-trigger">Save images as</label>
+                        <input type="hidden" id="image-format-preference" value="original">
+                        <div class="format-select" id="image-format-select">
+                            <button
+                                type="button"
+                                class="format-select-trigger"
+                                id="image-format-trigger"
+                                role="combobox"
+                                aria-haspopup="listbox"
+                                aria-expanded="false"
+                                aria-controls="image-format-options"
+                                aria-labelledby="image-format-label image-format-value"
+                            >
+                                <span id="image-format-value">Original</span>
+                                <svg class="ui-icon format-select-chevron" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
                             </button>
-                            <button type="button" class="format-select-option" role="option" data-value="ask" aria-selected="false">
-                                <span>Ask every time</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
-                            </button>
-                            <button type="button" class="format-select-option" role="option" data-value="png" aria-selected="false">
-                                <span>PNG</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
-                            </button>
-                            <button type="button" class="format-select-option" role="option" data-value="jpg" aria-selected="false">
-                                <span>JPG</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
-                            </button>
-                            <button type="button" class="format-select-option" role="option" data-value="webp" aria-selected="false">
-                                <span>WebP</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
-                            </button>
+                            <div
+                                class="format-select-list hidden"
+                                id="image-format-options"
+                                role="listbox"
+                                aria-labelledby="image-format-label"
+                            >
+                                <button type="button" class="format-select-option" role="option" data-value="original" aria-selected="true">
+                                    <span>Original</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                </button>
+                                <button type="button" class="format-select-option" role="option" data-value="ask" aria-selected="false">
+                                    <span>Ask every time</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                </button>
+                                <button type="button" class="format-select-option" role="option" data-value="png" aria-selected="false">
+                                    <span>PNG</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                </button>
+                                <button type="button" class="format-select-option" role="option" data-value="jpg" aria-selected="false">
+                                    <span>JPG</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                </button>
+                                <button type="button" class="format-select-option" role="option" data-value="webp" aria-selected="false">
+                                    <span>WebP</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-helper format-settings-helper">
+                            <svg class="ui-icon"><use href="#icon-info"></use></svg>
+                            <span>Animated or unsupported images are saved in their original format with a warning.</span>
                         </div>
                     </div>
-                    <div class="form-helper format-settings-helper">
-                        <svg class="ui-icon"><use href="#icon-info"></use></svg>
-                        <span>Animated or unsupported images are saved in their original format with a warning.</span>
+                </section>
+
+                <section class="settings-section" aria-labelledby="filename-section-title">
+                    <h4 id="filename-section-title">File naming rule</h4>
+                    <div class="form-group">
+                        <label for="filename-rule">File naming rule</label>
+                        <select id="filename-rule" class="form-input settings-select">
+                            <option value="automatic">Automatic</option>
+                            <option value="original">Original filename</option>
+                            <option value="custom">Custom template</option>
+                        </select>
+                        <div class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Choose a safe default, keep the original file name, or build a descriptive template.</span></div>
                     </div>
-                </div>
+                    <div id="filename-template-group" class="filename-template-group" hidden>
+                        <div class="form-group">
+                            <label for="filename-template">Filename template</label>
+                            <input type="text" id="filename-template" class="form-input" value="{originalName}_{date}_{domain}.{ext}" aria-describedby="filename-template-error" aria-invalid="false">
+                            <p id="filename-template-error" class="form-error hidden" role="alert" aria-live="polite"></p>
+                        </div>
+                        <p class="filename-preview-label">Preview</p>
+                        <output id="filename-preview" class="filename-preview" aria-live="polite"></output>
+                        <p class="variable-help">Variables: <code>{originalName}</code>, <code>{date}</code> (YYYYMMDD), <code>{time}</code> (HHMMSS), <code>{domain}</code>, <code>{pageTitle}</code>, <code>{width}</code>, <code>{height}</code>, <code>{ext}</code>.</p>
+                    </div>
+                </section>
+
+                <section class="settings-section" aria-labelledby="directory-section-title">
+                    <h4 id="directory-section-title">Save directory rule</h4>
+                    <div class="form-group">
+                        <label for="directory-rule">Save directory rule</label>
+                        <select id="directory-rule" class="form-input settings-select">
+                            <option value="fixed">Fixed directory</option>
+                            <option value="date">By date</option>
+                            <option value="domain">By website</option>
+                            <option value="domain-date">By website and date</option>
+                        </select>
+                        <div class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span>Rules are relative to the target folder configured on the selected WebDAV server. /Images is only an example, never a fixed path.</span></div>
+                    </div>
+                </section>
             </form>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" id="cancel-image-format-btn">Cancel</button>
-                <button type="submit" form="image-format-form" class="btn btn-primary" id="save-image-format-btn">
+                <button type="button" class="btn btn-secondary" id="cancel-save-settings-btn">Cancel</button>
+                <button type="submit" form="save-settings-form" class="btn btn-primary" id="save-save-settings-btn">
                     <svg class="ui-icon"><use href="#icon-save"></use></svg>
                     Save
                 </button>

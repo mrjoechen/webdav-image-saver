@@ -6,17 +6,23 @@ document.addEventListener('DOMContentLoaded', () => {
     serverList: document.getElementById('server-list'),
     addServerBtn: document.getElementById('add-server-btn'),
     addFirstServerBtn: document.getElementById('add-first-server-btn'),
-    imageFormatSettingsBtn: document.getElementById('image-format-settings-btn'),
-    imageFormatModal: document.getElementById('image-format-modal'),
-    imageFormatForm: document.getElementById('image-format-form'),
+    saveSettingsBtn: document.getElementById('save-settings-btn'),
+    saveSettingsModal: document.getElementById('save-settings-modal'),
+    saveSettingsForm: document.getElementById('save-settings-form'),
     imageFormatPreference: document.getElementById('image-format-preference'),
     imageFormatSelect: document.getElementById('image-format-select'),
     imageFormatTrigger: document.getElementById('image-format-trigger'),
     imageFormatValue: document.getElementById('image-format-value'),
     imageFormatOptions: document.getElementById('image-format-options'),
-    closeImageFormatBtn: document.getElementById('close-image-format-btn'),
-    cancelImageFormatBtn: document.getElementById('cancel-image-format-btn'),
-    saveImageFormatBtn: document.getElementById('save-image-format-btn'),
+    filenameRule: document.getElementById('filename-rule'),
+    filenameTemplateGroup: document.getElementById('filename-template-group'),
+    filenameTemplate: document.getElementById('filename-template'),
+    filenameTemplateError: document.getElementById('filename-template-error'),
+    filenamePreview: document.getElementById('filename-preview'),
+    directoryRule: document.getElementById('directory-rule'),
+    closeSaveSettingsBtn: document.getElementById('close-save-settings-btn'),
+    cancelSaveSettingsBtn: document.getElementById('cancel-save-settings-btn'),
+    saveSaveSettingsBtn: document.getElementById('save-save-settings-btn'),
     themeToggleBtn: document.getElementById('theme-toggle-btn'),
     themeToggleIcon: document.getElementById('theme-toggle-icon'),
     modal: document.getElementById('server-modal'),
@@ -63,7 +69,14 @@ document.addEventListener('DOMContentLoaded', () => {
     jpg: 'JPG',
     webp: 'WebP'
   };
-  let imageFormatPreference = 'original';
+  let persistedSaveSettings = {
+    image: { saveFormat: 'original' },
+    filename: {
+      rule: 'automatic',
+      customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE
+    },
+    directory: { rule: 'fixed' }
+  };
 
   // Initialize the app
   init();
@@ -71,23 +84,28 @@ document.addEventListener('DOMContentLoaded', () => {
   async function init() {
     initTheme();
     attachEventListeners();
-    await Promise.all([loadServers(), loadImageFormatPreference()]);
+    await Promise.all([loadServers(), loadSaveSettings()]);
   }
 
   function attachEventListeners() {
     // Modal controls
     elements.addServerBtn?.addEventListener('click', () => openModal());
     elements.addFirstServerBtn?.addEventListener('click', () => openModal());
-    elements.imageFormatSettingsBtn?.addEventListener('click', openImageFormatModal);
-    elements.imageFormatForm?.addEventListener('submit', saveImageFormatPreference);
+    elements.saveSettingsBtn?.addEventListener('click', openSaveSettingsModal);
+    elements.saveSettingsForm?.addEventListener('submit', saveSaveSettings);
     elements.imageFormatTrigger?.addEventListener('click', toggleImageFormatSelect);
     elements.imageFormatTrigger?.addEventListener('keydown', handleImageFormatTriggerKeydown);
     imageFormatOptionElements.forEach((option, index) => {
       option.addEventListener('click', () => selectImageFormat(option.dataset.value));
       option.addEventListener('keydown', event => handleImageFormatOptionKeydown(event, index));
     });
-    elements.closeImageFormatBtn?.addEventListener('click', closeImageFormatModal);
-    elements.cancelImageFormatBtn?.addEventListener('click', closeImageFormatModal);
+    elements.filenameRule?.addEventListener('change', updateFilenameRuleEditor);
+    elements.filenameTemplate?.addEventListener('input', updateFilenameRuleEditor);
+    elements.closeSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
+    elements.cancelSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
+    elements.saveSettingsModal?.addEventListener('click', event => {
+      if (event.target === elements.saveSettingsModal) closeSaveSettingsModal();
+    });
     elements.themeToggleBtn?.addEventListener('click', toggleTheme);
     elements.closeModalBtn?.addEventListener('click', () => closeModal());
     elements.cancelBtn?.addEventListener('click', () => closeModal());
@@ -120,8 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
         closeImageFormatSelect({ restoreFocus: true });
       } else if (!elements.folderPickerModal?.classList.contains('hidden')) {
         closeFolderPicker();
-      } else if (!elements.imageFormatModal?.classList.contains('hidden')) {
-        closeImageFormatModal();
+      } else if (!elements.saveSettingsModal?.classList.contains('hidden')) {
+        closeSaveSettingsModal();
       } else if (!elements.modal?.classList.contains('hidden')) {
         closeModal();
       }
@@ -159,27 +177,46 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.themeToggleBtn.setAttribute('title', isDark ? 'Light mode' : 'Dark mode');
   }
 
-  async function loadImageFormatPreference() {
+  function copySaveSettings(settings) {
+    return {
+      image: { saveFormat: ImageFormat.normalizeFormatPreference(settings?.image?.saveFormat) },
+      filename: {
+        rule: FilenameRule.normalizeFilenameRule(settings?.filename?.rule),
+        customTemplate: String(settings?.filename?.customTemplate || FilenameRule.DEFAULT_CUSTOM_TEMPLATE).trim()
+      },
+      directory: { rule: DirectoryRule.normalizeDirectoryRule(settings?.directory?.rule) }
+    };
+  }
+
+  async function loadSaveSettings() {
     try {
       const settings = await AppSettings.loadSettings(chrome.storage.local);
-      imageFormatPreference = settings.image.saveFormat;
-      setImageFormatControl(imageFormatPreference);
+      persistedSaveSettings = copySaveSettings(settings);
+      restoreSaveSettingsControls();
     } catch (error) {
-      console.error('Error loading image format preference:', error);
-      showNotification('Could not load image format preference.', 'error');
+      console.error('Error loading save settings:', error);
+      showNotification('Could not load Save settings.', 'error');
     }
   }
 
-  function openImageFormatModal() {
-    setImageFormatControl(imageFormatPreference);
-    elements.imageFormatModal?.classList.remove('hidden');
+  function openSaveSettingsModal() {
+    restoreSaveSettingsControls();
+    elements.saveSettingsModal?.classList.remove('hidden');
     elements.imageFormatTrigger?.focus();
   }
 
-  function closeImageFormatModal() {
+  function closeSaveSettingsModal() {
     closeImageFormatSelect();
-    elements.imageFormatModal?.classList.add('hidden');
-    setImageFormatControl(imageFormatPreference);
+    elements.saveSettingsModal?.classList.add('hidden');
+    restoreSaveSettingsControls();
+  }
+
+  function restoreSaveSettingsControls() {
+    setImageFormatControl(persistedSaveSettings.image.saveFormat);
+    if (elements.filenameRule) elements.filenameRule.value = persistedSaveSettings.filename.rule;
+    if (elements.filenameTemplate) elements.filenameTemplate.value = persistedSaveSettings.filename.customTemplate;
+    if (elements.directoryRule) elements.directoryRule.value = persistedSaveSettings.directory.rule;
+    updateFilenameRuleEditor();
   }
 
   function setImageFormatControl(value) {
@@ -260,29 +297,80 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function saveImageFormatPreference(event) {
+  function updateFilenameRuleEditor() {
+    const isCustom = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value) === 'custom';
+    elements.filenameTemplateGroup?.toggleAttribute('hidden', !isCustom);
+    const template = elements.filenameTemplate?.value || '';
+    const validation = FilenameRule.validateTemplate(template.trim());
+    const invalid = isCustom && !validation.valid;
+
+    if (elements.filenameTemplate) {
+      elements.filenameTemplate.setAttribute('aria-invalid', String(invalid));
+      elements.filenameTemplate.classList.toggle('is-invalid', invalid);
+    }
+    if (elements.filenameTemplateError) {
+      elements.filenameTemplateError.textContent = invalid ? validation.error : '';
+      elements.filenameTemplateError.classList.toggle('hidden', !invalid);
+    }
+    if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = invalid;
+    updateFilenamePreview();
+    return validation;
+  }
+
+  function updateFilenamePreview() {
+    if (!elements.filenamePreview) return;
+    elements.filenamePreview.textContent = FilenameRule.generateFilename({
+      rule: FilenameRule.normalizeFilenameRule(elements.filenameRule?.value),
+      template: elements.filenameTemplate?.value || FilenameRule.DEFAULT_CUSTOM_TEMPLATE,
+      imageUrl: 'https://cdn.example.net/photos/sunset.png',
+      pageUrl: 'https://www.example.com/article',
+      pageTitle: 'Summer trip',
+      width: 1920,
+      height: 1080,
+      extension: 'jpg',
+      now: new Date(2026, 7, 20, 14, 35, 9)
+    });
+  }
+
+  async function saveSaveSettings(event) {
     event.preventDefault();
+    const filenameValidation = updateFilenameRuleEditor();
+    const filenameRule = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value);
+    if (filenameRule === 'custom' && !filenameValidation.valid) {
+      elements.filenameTemplate?.focus();
+      return;
+    }
+
     const selectedPreference = ImageFormat.normalizeFormatPreference(elements.imageFormatPreference?.value);
+    const customTemplate = (elements.filenameTemplate?.value || '').trim() || FilenameRule.DEFAULT_CUSTOM_TEMPLATE;
+    const directoryRule = DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value);
 
     try {
-      if (elements.saveImageFormatBtn) elements.saveImageFormatBtn.disabled = true;
-      await AppSettings.updateSettings(chrome.storage.local, {
+      if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = true;
+      const settings = await AppSettings.updateSettings(chrome.storage.local, {
         image: {
           saveFormat: selectedPreference
+        },
+        filename: {
+          rule: filenameRule,
+          customTemplate
+        },
+        directory: {
+          rule: directoryRule
         }
       });
-      imageFormatPreference = selectedPreference;
-      closeImageFormatModal();
+      persistedSaveSettings = copySaveSettings(settings);
+      closeSaveSettingsModal();
       const backgroundUpdated = await notifyBackgroundConfigUpdated();
       showNotification(
-        backgroundUpdated ? 'Image format preference saved.' : 'Saved. Reload the extension to apply it.',
+        backgroundUpdated ? 'Save settings saved.' : 'Saved. Reload the extension to apply it.',
         backgroundUpdated ? 'success' : 'warning'
       );
     } catch (error) {
-      console.error('Error saving image format preference:', error);
-      showNotification('Could not save image format preference.', 'error');
+      console.error('Error saving Save settings:', error);
+      showNotification('Could not save Save settings.', 'error');
     } finally {
-      if (elements.saveImageFormatBtn) elements.saveImageFormatBtn.disabled = false;
+      if (elements.saveSaveSettingsBtn) elements.saveSaveSettingsBtn.disabled = false;
     }
   }
 

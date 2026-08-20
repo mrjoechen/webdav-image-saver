@@ -56,13 +56,21 @@ test('content script exposes a per-save chooser and warning status', () => {
   assert.match(bubbleCss, /\.webdav-saver-status-bubble\.warning/);
 });
 
-test('options page exposes and persists the global image format preference', () => {
+test('options page exposes and persists combined save settings', () => {
   const optionsHtml = readProjectFile('options/options.html');
   const optionsSource = readProjectFile('options/options.js');
   const optionsCss = readProjectFile('options/options.css');
 
-  assert.match(optionsHtml, /id="image-format-settings-btn"/);
-  assert.match(optionsHtml, /id="image-format-modal"/);
+  assert.match(optionsHtml, /id="save-settings-btn"[^>]*aria-label="Save settings"[^>]*title="Save settings"/);
+  assert.match(optionsHtml, /id="save-settings-modal"/);
+  assert.match(optionsHtml, /id="save-settings-form"/);
+  assert.match(optionsHtml, /<h3>Save settings<\/h3>/);
+  assert.match(optionsHtml, /id="close-save-settings-btn"/);
+  assert.match(optionsHtml, /id="cancel-save-settings-btn"/);
+  assert.match(optionsHtml, /id="save-save-settings-btn"/);
+  assert.doesNotMatch(optionsHtml, /id="image-format-settings-btn"/);
+  assert.doesNotMatch(optionsHtml, /id="image-format-modal"/);
+  assert.doesNotMatch(optionsHtml, /id="image-format-form"/);
   assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>/);
   assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>\s*<script src="\.\.\/filename-rule\.js"><\/script>\s*<script src="\.\.\/directory-rule\.js"><\/script>\s*<script src="\.\.\/settings\.js"><\/script>/);
   assert.match(optionsHtml, /<script src="\.\.\/settings\.js"><\/script>/);
@@ -79,15 +87,69 @@ test('options page exposes and persists the global image format preference', () 
     assert.match(optionsHtml, new RegExp(`role="option"[^>]*data-value="${value}"[^>]*>[\\s\\S]*?${label}`));
   }
 
-  assert.match(optionsSource, /imageFormatPreference/);
+  assert.match(optionsHtml, /<label[^>]*for="filename-rule"[^>]*>File naming rule<\/label>/);
+  for (const [value, label] of [
+    ['automatic', 'Automatic'],
+    ['original', 'Original filename'],
+    ['custom', 'Custom template']
+  ]) {
+    assert.match(optionsHtml, new RegExp(`<option value="${value}">${label}<\\/option>`));
+  }
+  assert.match(optionsHtml, /id="filename-template-group"[^>]*hidden/);
+  assert.match(optionsHtml, /id="filename-template"[^>]*aria-describedby="filename-template-error"/);
+  assert.match(optionsHtml, /id="filename-template-error"[^>]*role="alert"[^>]*aria-live="polite"/);
+  assert.match(optionsHtml, /id="filename-preview"[^>]*aria-live="polite"/);
+  for (const token of ['originalName', 'date', 'time', 'domain', 'pageTitle', 'width', 'height', 'ext']) {
+    assert.match(optionsHtml, new RegExp(`\\{${token}\\}`));
+  }
+
+  assert.match(optionsHtml, /<label[^>]*for="directory-rule"[^>]*>Save directory rule<\/label>/);
+  for (const [value, label] of [
+    ['fixed', 'Fixed directory'],
+    ['date', 'By date'],
+    ['domain', 'By website'],
+    ['domain-date', 'By website and date']
+  ]) {
+    assert.match(optionsHtml, new RegExp(`<option value="${value}">${label}<\\/option>`));
+  }
+  assert.match(optionsHtml, /relative to the target folder configured on the selected WebDAV server/i);
+  assert.match(optionsHtml, /\/Images is only an example/i);
+
+  assert.match(optionsSource, /persistedSaveSettings/);
   assert.match(optionsSource, /ImageFormat\.normalizeFormatPreference/);
   assert.match(optionsSource, /AppSettings\.loadSettings/);
   assert.match(optionsSource, /AppSettings\.updateSettings/);
+  assert.match(optionsSource, /FilenameRule\.validateTemplate/);
+  assert.match(optionsSource, /FilenameRule\.generateFilename/);
+  assert.match(optionsSource, /FilenameRule\.normalizeFilenameRule/);
+  assert.match(optionsSource, /DirectoryRule\.normalizeDirectoryRule/);
+  assert.match(optionsSource, /image:\s*\{\s*saveFormat:/s);
+  assert.match(optionsSource, /filename:\s*\{\s*rule:.*customTemplate:/s);
+  assert.match(optionsSource, /directory:\s*\{\s*rule:/s);
   assert.doesNotMatch(optionsSource, /chrome\.storage\.local\.set\(\{ imageFormatPreference/);
   assert.match(optionsSource, /action: ['"]configUpdated['"]/);
   assert.match(optionsSource, /function openImageFormatSelect/);
   assert.match(optionsSource, /function closeImageFormatSelect/);
   assert.match(optionsSource, /function selectImageFormat/);
+  assert.match(optionsSource, /function restoreSaveSettingsControls/);
+  assert.match(optionsSource, /function updateFilenameRuleEditor/);
+  assert.match(optionsSource, /function closeSaveSettingsModal\(\)\s*\{[\s\S]*?restoreSaveSettingsControls\(\);/);
+  assert.match(optionsSource, /filenameTemplateGroup\?\.toggleAttribute\(['"]hidden['"], !isCustom\)/);
+  assert.match(optionsSource, /saveSaveSettingsBtn\.disabled = invalid/);
+  assert.match(optionsSource, /event\.target === elements\.saveSettingsModal/);
+  assert.match(optionsSource, /new Date\(2026,\s*7,\s*20,\s*14,\s*35,\s*9\)/);
+  assert.match(optionsSource, /imageUrl:\s*['"]https:\/\/cdn\.example\.net\/photos\/sunset\.png['"]/);
+  assert.match(optionsSource, /pageUrl:\s*['"]https:\/\/www\.example\.com\/article['"]/);
+  assert.match(optionsSource, /pageTitle:\s*['"]Summer trip['"]/);
+  assert.match(optionsSource, /width:\s*1920/);
+  assert.match(optionsSource, /height:\s*1080/);
+  assert.match(optionsCss, /\.save-settings-container\s*\{[^}]*max-height:\s*90vh;[^}]*overflow:\s*hidden;/s);
+  assert.match(optionsCss, /\.save-settings-container \.modal-content\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(optionsCss, /\.settings-section/);
+  assert.match(optionsCss, /\.settings-select/);
+  assert.match(optionsCss, /\.filename-preview/);
+  assert.match(optionsCss, /\.form-error/);
+  assert.match(optionsCss, /\.form-input\.is-invalid/);
   assert.match(optionsCss, /\.format-select-list\s*\{[^}]*top:\s*calc\(100% - 1px\);/s);
   assert.match(optionsCss, /\.format-select-chevron\s*\{[^}]*right:\s*14px;/s);
 });
