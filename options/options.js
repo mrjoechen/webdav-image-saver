@@ -70,7 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
     jpg: 'JPG',
     webp: 'WebP'
   };
+  const currentSettingsSchemaVersion = Number.isInteger(AppSettings.SETTINGS_SCHEMA_VERSION)
+    ? AppSettings.SETTINGS_SCHEMA_VERSION
+    : 2;
   let persistedSaveSettings = {
+    schemaVersion: currentSettingsSchemaVersion,
     image: { saveFormat: 'original' },
     filename: {
       rule: 'automatic',
@@ -83,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let saveSettingsRevision = 0;
   let isSaving = false;
   let saveSettingsOpener = null;
+  const dirtySaveSettingsFields = new Set();
 
   // Initialize the app
   init();
@@ -106,8 +111,17 @@ document.addEventListener('DOMContentLoaded', () => {
       option.addEventListener('click', () => selectImageFormat(option.dataset.value));
       option.addEventListener('keydown', event => handleImageFormatOptionKeydown(event, index));
     });
-    elements.filenameRule?.addEventListener('change', updateFilenameRuleEditor);
-    elements.filenameTemplate?.addEventListener('input', updateFilenameRuleEditor);
+    elements.filenameRule?.addEventListener('change', () => {
+      dirtySaveSettingsFields.add('filename.rule');
+      updateFilenameRuleEditor();
+    });
+    elements.filenameTemplate?.addEventListener('input', () => {
+      dirtySaveSettingsFields.add('filename.customTemplate');
+      updateFilenameRuleEditor();
+    });
+    elements.directoryRule?.addEventListener('change', () => {
+      dirtySaveSettingsFields.add('directory.rule');
+    });
     elements.closeSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
     elements.cancelSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
     elements.saveSettingsModal?.addEventListener('click', event => {
@@ -204,13 +218,36 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function copySaveSettings(settings) {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    const sourceImage = source.image && typeof source.image === 'object' ? source.image : {};
+    const sourceFilename = source.filename && typeof source.filename === 'object' ? source.filename : {};
+    const sourceDirectory = source.directory && typeof source.directory === 'object' ? source.directory : {};
     return {
-      image: { saveFormat: ImageFormat.normalizeFormatPreference(settings?.image?.saveFormat) },
-      filename: {
-        rule: FilenameRule.normalizeFilenameRule(settings?.filename?.rule),
-        customTemplate: String(settings?.filename?.customTemplate || FilenameRule.DEFAULT_CUSTOM_TEMPLATE).trim()
+      ...source,
+      schemaVersion: Number.isInteger(source.schemaVersion) && source.schemaVersion > 0
+        ? source.schemaVersion
+        : currentSettingsSchemaVersion,
+      image: {
+        ...sourceImage,
+        saveFormat: Object.prototype.hasOwnProperty.call(sourceImage, 'saveFormat')
+          ? sourceImage.saveFormat
+          : 'original'
       },
-      directory: { rule: DirectoryRule.normalizeDirectoryRule(settings?.directory?.rule) }
+      filename: {
+        ...sourceFilename,
+        rule: Object.prototype.hasOwnProperty.call(sourceFilename, 'rule')
+          ? sourceFilename.rule
+          : 'automatic',
+        customTemplate: Object.prototype.hasOwnProperty.call(sourceFilename, 'customTemplate')
+          ? sourceFilename.customTemplate
+          : FilenameRule.DEFAULT_CUSTOM_TEMPLATE
+      },
+      directory: {
+        ...sourceDirectory,
+        rule: Object.prototype.hasOwnProperty.call(sourceDirectory, 'rule')
+          ? sourceDirectory.rule
+          : 'fixed'
+      }
     };
   }
 
@@ -318,10 +355,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function restoreSaveSettingsControls() {
+    dirtySaveSettingsFields.clear();
     setImageFormatControl(persistedSaveSettings.image.saveFormat);
-    if (elements.filenameRule) elements.filenameRule.value = persistedSaveSettings.filename.rule;
-    if (elements.filenameTemplate) elements.filenameTemplate.value = persistedSaveSettings.filename.customTemplate;
-    if (elements.directoryRule) elements.directoryRule.value = persistedSaveSettings.directory.rule;
+    if (elements.filenameRule) {
+      elements.filenameRule.value = FilenameRule.normalizeFilenameRule(persistedSaveSettings.filename.rule);
+    }
+    if (elements.filenameTemplate) {
+      elements.filenameTemplate.value = String(persistedSaveSettings.filename.customTemplate ?? '');
+    }
+    if (elements.directoryRule) {
+      elements.directoryRule.value = DirectoryRule.normalizeDirectoryRule(persistedSaveSettings.directory.rule);
+    }
     updateFilenameRuleEditor();
   }
 
@@ -370,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function selectImageFormat(value) {
     if (isSaving) return;
+    dirtySaveSettingsFields.add('image.saveFormat');
     setImageFormatControl(value);
     closeImageFormatSelect({ restoreFocus: true });
   }
@@ -455,23 +500,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedPreference = ImageFormat.normalizeFormatPreference(elements.imageFormatPreference?.value);
     const customTemplate = (elements.filenameTemplate?.value || '').trim() || FilenameRule.DEFAULT_CUSTOM_TEMPLATE;
     const directoryRule = DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value);
+    const completeUpdate = {
+      image: {
+        saveFormat: selectedPreference
+      },
+      filename: {
+        rule: filenameRule,
+        customTemplate
+      },
+      directory: {
+        rule: directoryRule
+      }
+    };
+    const isFutureSchema = persistedSaveSettings.schemaVersion > currentSettingsSchemaVersion;
+    const settingsUpdate = isFutureSchema
+      ? buildDirtySaveSettingsUpdate(completeUpdate)
+      : completeUpdate;
 
     try {
       isSaving = true;
       ++saveSettingsRevision;
       setSaveSettingsBusy(true);
-      const settings = await AppSettings.updateSettings(chrome.storage.local, {
-        image: {
-          saveFormat: selectedPreference
-        },
-        filename: {
-          rule: filenameRule,
-          customTemplate
-        },
-        directory: {
-          rule: directoryRule
-        }
-      });
+      const settings = await AppSettings.updateSettings(chrome.storage.local, settingsUpdate);
       persistedSaveSettings = copySaveSettings(settings);
       isSaving = false;
       setSaveSettingsBusy(false);
@@ -487,6 +537,27 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error saving Save settings:', error);
       showNotification('Could not save Save settings.', 'error');
     }
+  }
+
+  function buildDirtySaveSettingsUpdate(completeUpdate) {
+    const update = {};
+    if (dirtySaveSettingsFields.has('image.saveFormat')) {
+      update.image = { saveFormat: completeUpdate.image.saveFormat };
+    }
+
+    const filenameUpdate = {};
+    if (dirtySaveSettingsFields.has('filename.rule')) {
+      filenameUpdate.rule = completeUpdate.filename.rule;
+    }
+    if (dirtySaveSettingsFields.has('filename.customTemplate')) {
+      filenameUpdate.customTemplate = completeUpdate.filename.customTemplate;
+    }
+    if (Object.keys(filenameUpdate).length > 0) update.filename = filenameUpdate;
+
+    if (dirtySaveSettingsFields.has('directory.rule')) {
+      update.directory = { rule: completeUpdate.directory.rule };
+    }
+    return update;
   }
 
   function openModal(serverId = null) {

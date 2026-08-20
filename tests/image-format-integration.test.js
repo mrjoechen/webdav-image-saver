@@ -144,7 +144,7 @@ function createOptionsHarness({ settings, loadSettings = async () => settings, u
     window: { matchMedia: () => ({ matches: false }) },
     localStorage: { getItem: () => null, setItem: () => {} },
     chrome,
-    AppSettings: { loadSettings, updateSettings },
+    AppSettings: { SETTINGS_SCHEMA_VERSION: 2, loadSettings, updateSettings },
     ImageFormat,
     FilenameRule,
     DirectoryRule,
@@ -467,6 +467,65 @@ test('save settings modal restores edits, validates templates, previews current 
   } finally {
     FilenameRule.generateFilename = originalGenerateFilename;
   }
+});
+
+test('future-schema save settings submit only explicit edits instead of UI fallbacks', async () => {
+  const futureSettings = {
+    schemaVersion: 4,
+    image: { saveFormat: 'avif' },
+    filename: { rule: 'content-hash', customTemplate: '{futureVariable}' },
+    directory: { rule: 'project' }
+  };
+
+  function createFutureHarness() {
+    const updates = [];
+    const harness = createOptionsHarness({
+      settings: futureSettings,
+      updateSettings: async (_storage, update) => {
+        updates.push(update);
+        return {
+          ...futureSettings,
+          image: { ...futureSettings.image, ...update.image },
+          filename: { ...futureSettings.filename, ...update.filename },
+          directory: { ...futureSettings.directory, ...update.directory }
+        };
+      }
+    });
+    return { harness, updates };
+  }
+
+  const direct = createFutureHarness();
+  await direct.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await direct.harness.elements['save-settings-btn'].emit('click');
+  assert.equal(direct.harness.elements['image-format-preference'].value, 'original');
+  assert.equal(direct.harness.elements['filename-rule'].value, 'automatic');
+  assert.equal(direct.harness.elements['directory-rule'].value, 'fixed');
+  await direct.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(JSON.parse(JSON.stringify(direct.updates)), [{}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(direct.harness.testApi.getState().persisted)), futureSettings);
+
+  const oneEdit = createFutureHarness();
+  await oneEdit.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await oneEdit.harness.elements['save-settings-btn'].emit('click');
+  oneEdit.harness.elements['directory-rule'].value = 'date';
+  await oneEdit.harness.elements['directory-rule'].emit('change');
+  await oneEdit.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(JSON.parse(JSON.stringify(oneEdit.updates)), [{ directory: { rule: 'date' } }]);
+  assert.equal(oneEdit.harness.testApi.getState().persisted.image.saveFormat, 'avif');
+  assert.equal(oneEdit.harness.testApi.getState().persisted.filename.rule, 'content-hash');
+  assert.equal(oneEdit.harness.testApi.getState().persisted.filename.customTemplate, '{futureVariable}');
+
+  const explicitFallback = createFutureHarness();
+  await explicitFallback.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await explicitFallback.harness.elements['save-settings-btn'].emit('click');
+  await explicitFallback.harness.formatOptions.find(option => option.dataset.value === 'original').emit('click');
+  await explicitFallback.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(JSON.parse(JSON.stringify(explicitFallback.updates)), [{ image: { saveFormat: 'original' } }]);
+  assert.equal(explicitFallback.harness.testApi.getState().persisted.filename.rule, 'content-hash');
+  assert.equal(explicitFallback.harness.testApi.getState().persisted.directory.rule, 'project');
 });
 
 test('save settings disables while writing and recovers from a deferred failed write', async () => {
