@@ -10,6 +10,8 @@
     const FORMAT_PREFERENCES = Object.freeze(['original', 'ask', 'png', 'jpg', 'webp']);
     const MIME_EXTENSIONS = Object.freeze({
         'image/gif': 'gif',
+        'image/vnd.microsoft.icon': 'ico',
+        'image/x-icon': 'ico',
         'image/jpeg': 'jpg',
         'image/png': 'png',
         'image/webp': 'webp'

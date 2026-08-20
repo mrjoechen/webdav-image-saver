@@ -607,3 +607,59 @@ test('uses the prepared AVIF MIME type for the final filename and upload target'
   assert.equal(statuses[0].message.status, 'success');
   assert.equal(statuses[0].message.message, 'Saved as "photo.avif"');
 });
+
+test('uses actual ICO MIME aliases for extensionless and incorrectly extended uploads', async () => {
+  const variants = [
+    { mimeType: 'image/x-icon', imageUrl: 'https://cdn.example/favicon' },
+    { mimeType: 'image/vnd.microsoft.icon', imageUrl: 'https://cdn.example/favicon.png' }
+  ];
+
+  for (const [index, variant] of variants.entries()) {
+    const requests = [];
+    const statuses = [];
+    const sourceBlob = new Blob([`ico-${index}`], { type: variant.mimeType });
+    const settings = {
+      image: { saveFormat: 'original' },
+      filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+      directory: { rule: 'fixed' }
+    };
+    const worker = await createWorker(async (url, options) => {
+      requests.push({ url, options });
+      if (!options?.method) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          blob: async () => sourceBlob
+        };
+      }
+      return response(201, 'Created');
+    }, {
+      settings,
+      ImageFormat,
+      FilenameRule,
+      DirectoryRule,
+      sentMessages: statuses
+    });
+
+    await worker.uploadImage(
+      variant.imageUrl,
+      'https://page.example/article',
+      'An article',
+      server,
+      `upload-ico-${index}`,
+      7,
+      'original'
+    );
+    await new Promise(resolve => setImmediate(resolve));
+
+    const put = requests.find(request => request.options?.method === 'PUT');
+    assert.ok(put);
+    assert.equal(put.url, 'https://dav.example/webdav/favicon.ico');
+    assert.equal(put.options.headers.get('Content-Type'), variant.mimeType);
+    assert.equal(put.options.body, sourceBlob);
+    assert.equal(statuses.length, 1);
+    assert.equal(statuses[0].message.status, 'success');
+    assert.equal(statuses[0].message.message, 'Saved as "favicon.ico"');
+  }
+});

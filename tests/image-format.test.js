@@ -127,6 +127,23 @@ test('maps MIME types and fallback extensions to safe file extensions', () => {
   assert.equal(extensionForMimeType('', 'svg?download=1'), 'bin');
 });
 
+test('maps both standard icon MIME aliases to the actual ICO extension', async () => {
+  for (const mimeType of ['image/x-icon', 'image/vnd.microsoft.icon']) {
+    assert.equal(extensionForMimeType(mimeType, 'png'), 'ico');
+
+    const sourceBlob = new Blob(['ico'], { type: mimeType });
+    const result = await prepareImageForUpload({
+      blob: sourceBlob,
+      filename: 'favicon.png',
+      targetFormat: 'original'
+    });
+
+    assert.equal(result.blob, sourceBlob);
+    assert.equal(result.filename, 'favicon.ico');
+    assert.equal(result.mimeType, mimeType);
+  }
+});
+
 test('uses the actual extension for safe unmapped image MIME types', async () => {
   assert.equal(extensionForMimeType('image/avif', 'png'), 'avif');
   assert.equal(extensionForMimeType('image/svg+xml', 'png'), 'svg');
