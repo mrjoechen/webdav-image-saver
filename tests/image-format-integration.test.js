@@ -300,9 +300,9 @@ test('save settings modal restores edits, validates templates, previews current 
     directory: { rule: 'date' }
   };
   const savedSettings = {
-    image: { saveFormat: 'webp' },
-    filename: { rule: 'custom', customTemplate: '{domain}_{date}.{ext}' },
-    directory: { rule: 'domain-date' }
+    image: { saveFormat: 'jpg' },
+    filename: { rule: 'custom', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'domain' }
   };
   const updates = [];
   const originalGenerateFilename = FilenameRule.generateFilename;
@@ -358,13 +358,21 @@ test('save settings modal restores edits, validates templates, previews current 
     assert.equal(harness.elements['filename-template'].value, '{originalName}_{time}.{ext}');
     assert.equal(harness.elements['directory-rule'].value, 'date');
 
-    harness.elements['filename-rule'].value = 'custom';
-    await harness.elements['close-save-settings-btn'].emit('click');
-    assert.equal(harness.elements['filename-rule'].value, 'original');
     await harness.elements['save-settings-btn'].emit('click');
     harness.elements['filename-rule'].value = 'custom';
-    await harness.document.emit('keydown', { key: 'Escape' });
+    harness.elements['filename-template'].value = '{pageTitle}.{ext}';
+    harness.elements['directory-rule'].value = 'domain-date';
+    await harness.elements['close-save-settings-btn'].emit('click');
+    await harness.elements['save-settings-btn'].emit('click');
     assert.equal(harness.elements['filename-rule'].value, 'original');
+    harness.elements['filename-rule'].value = 'custom';
+    harness.elements['filename-template'].value = '{width}.{ext}';
+    harness.elements['directory-rule'].value = 'domain';
+    await harness.document.emit('keydown', { key: 'Escape' });
+    await harness.elements['save-settings-btn'].emit('click');
+    assert.equal(harness.elements['filename-rule'].value, 'original');
+    assert.equal(harness.elements['filename-template'].value, '{originalName}_{time}.{ext}');
+    assert.equal(harness.elements['directory-rule'].value, 'date');
 
     await harness.elements['save-settings-btn'].emit('click');
     await harness.formatOptions.find(option => option.dataset.value === 'webp').emit('click');
@@ -383,16 +391,16 @@ test('save settings modal restores edits, validates templates, previews current 
     assert.equal(harness.notificationMessage.textContent, 'Save settings saved.');
 
     await harness.elements['save-settings-btn'].emit('click');
-    assert.equal(harness.elements['image-format-preference'].value, 'webp');
+    assert.equal(harness.elements['image-format-preference'].value, 'jpg');
     assert.equal(harness.elements['filename-rule'].value, 'custom');
-    assert.equal(harness.elements['filename-template'].value, '{domain}_{date}.{ext}');
-    assert.equal(harness.elements['directory-rule'].value, 'domain-date');
+    assert.equal(harness.elements['filename-template'].value, FilenameRule.DEFAULT_CUSTOM_TEMPLATE);
+    assert.equal(harness.elements['directory-rule'].value, 'domain');
   } finally {
     FilenameRule.generateFilename = originalGenerateFilename;
   }
 });
 
-test('save settings disables while writing and recovers from a failed write', async () => {
+test('save settings disables while writing and recovers from a deferred failed write', async () => {
   let resolveUpdate;
   const deferredUpdate = new Promise(resolve => { resolveUpdate = resolve; });
   const settings = {
@@ -411,9 +419,10 @@ test('save settings disables while writing and recovers from a failed write', as
   await saving;
   assert.equal(harness.elements['save-save-settings-btn'].disabled, false);
 
+  let rejectUpdate;
   const failedHarness = createOptionsHarness({
     settings,
-    updateSettings: async () => { throw new Error('storage unavailable'); }
+    updateSettings: () => new Promise((resolve, reject) => { rejectUpdate = reject; })
   });
   await failedHarness.document.emit('DOMContentLoaded');
   await flushOptionsInit();
@@ -422,11 +431,47 @@ test('save settings disables while writing and recovers from a failed write', as
   await failedHarness.elements['filename-rule'].emit('change');
   failedHarness.elements['filename-template'].value = '{domain}.{ext}';
   await failedHarness.elements['filename-template'].emit('input');
-  await failedHarness.elements['save-settings-form'].emit('submit');
+  const failingSave = failedHarness.elements['save-settings-form'].emit('submit');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(failedHarness.elements['save-save-settings-btn'].disabled, true);
+  rejectUpdate(new Error('storage unavailable'));
+  await failingSave;
   assert.equal(failedHarness.elements['save-save-settings-btn'].disabled, false);
   assert.equal(failedHarness.notificationMessage.textContent, 'Could not save Save settings.');
   await failedHarness.elements['cancel-save-settings-btn'].emit('click');
+  await failedHarness.elements['save-settings-btn'].emit('click');
   assert.equal(failedHarness.elements['filename-rule'].value, 'automatic');
+  assert.equal(failedHarness.elements['filename-template'].value, FilenameRule.DEFAULT_CUSTOM_TEMPLATE);
+  assert.equal(failedHarness.elements['directory-rule'].value, 'fixed');
+});
+
+test('save settings keeps returned state when background reload reports a warning', async () => {
+  const initialSettings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'fixed' }
+  };
+  const returnedSettings = {
+    image: { saveFormat: 'png' },
+    filename: { rule: 'original', customTemplate: '{pageTitle}.{ext}' },
+    directory: { rule: 'date' }
+  };
+  const harness = createOptionsHarness({
+    settings: initialSettings,
+    updateSettings: async () => returnedSettings,
+    configResponse: { success: false }
+  });
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.elements['save-settings-form'].emit('submit');
+  assert.equal(harness.notificationMessage.textContent, 'Saved. Reload the extension to apply it.');
+  assert.equal(harness.elements.notification.classList.contains('warning'), true);
+  await harness.elements['save-settings-btn'].emit('click');
+  assert.equal(harness.elements['image-format-preference'].value, 'png');
+  assert.equal(harness.elements['filename-rule'].value, 'original');
+  assert.equal(harness.elements['filename-template'].value, '{pageTitle}.{ext}');
+  assert.equal(harness.elements['directory-rule'].value, 'date');
 });
 
 test('theme toggle uses a balanced moon icon without resizing between themes', () => {
