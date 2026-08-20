@@ -242,6 +242,36 @@ test('resolves WebDAV XML namespaces in element scope when verifying collections
   }
 });
 
+test('rejects malformed WebDAV verification XML without caching it', async () => {
+  const invalidBodies = [
+    '<!garbage><D:resourcetype xmlns:D="DAV:"><D:collection/></D:resourcetype>',
+    '<!DOCTYPE collection><D:resourcetype xmlns:D="DAV:"><D:collection/></D:resourcetype>',
+    '<![CDATA[not a document]]><D:resourcetype xmlns:D="DAV:"><D:collection/></D:resourcetype>',
+    '<D:resourcetype xmlns:D="DAV:"><D:collection/></D:not-resourcetype>'
+  ];
+
+  for (const body of invalidBodies) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+    });
+
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    assert.equal(calls, 4);
+  }
+});
+
+test('accepts a well-formed collection response with XML declaration and comments', async () => {
+  const body = '<?xml version="1.0"?>\n<!-- before root -->\n<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>\n<!-- after root -->';
+  const worker = await createWorker(async (_url, options) => (
+    options.method === 'MKCOL' ? response(405) : response(207, '', body)
+  ));
+
+  await worker.ensureWebdavDirectories(server, ['/Images']);
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;

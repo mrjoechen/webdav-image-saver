@@ -740,6 +740,8 @@ function isWebdavCollectionResponse(responseText) {
     const namespaceStack = [];
     let foundCollection = false;
     let rootElementSeen = false;
+    let rootElementClosed = false;
+    let xmlDeclarationSeen = false;
     let position = 0;
 
     while (position < xml.length) {
@@ -754,6 +756,7 @@ function isWebdavCollectionResponse(responseText) {
             continue;
         }
         if (xml.startsWith('<![CDATA[', tagStart)) {
+            if (namespaceStack.length === 0) return false;
             const cdataEnd = xml.indexOf(']]>', tagStart + 9);
             if (cdataEnd < 0) return false;
             position = cdataEnd + 3;
@@ -762,6 +765,16 @@ function isWebdavCollectionResponse(responseText) {
         if (xml.startsWith('<?', tagStart)) {
             const declarationEnd = xml.indexOf('?>', tagStart + 2);
             if (declarationEnd < 0) return false;
+            const instructionSource = xml.slice(tagStart + 2, declarationEnd).trim();
+            const instructionMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=\s|$)/.exec(instructionSource);
+            if (!instructionMatch) return false;
+            const instructionTarget = instructionMatch[1];
+            if (instructionTarget === 'xml') {
+                if (xmlDeclarationSeen || rootElementSeen) return false;
+                xmlDeclarationSeen = true;
+            } else if (instructionTarget.toLowerCase() === 'xml') {
+                return false;
+            }
             position = declarationEnd + 2;
             continue;
         }
@@ -772,12 +785,13 @@ function isWebdavCollectionResponse(responseText) {
         position = tagEnd + 1;
         if (!tagSource) return false;
 
-        if (tagSource.startsWith('!')) continue;
+        if (tagSource.startsWith('!')) return false;
         if (tagSource.startsWith('/')) {
             const closingName = tagSource.slice(1).trim();
             if (!isXmlQualifiedName(closingName)) return false;
             const frame = namespaceStack.pop();
             if (!frame || frame.qualifiedName !== closingName) return false;
+            if (namespaceStack.length === 0) rootElementClosed = true;
             continue;
         }
 
@@ -793,6 +807,7 @@ function isWebdavCollectionResponse(responseText) {
         if (!parentFrame) {
             if (rootElementSeen) return false;
             rootElementSeen = true;
+            if (selfClosing) rootElementClosed = true;
         }
         const namespaces = Object.assign(
             Object.create(null),
@@ -813,7 +828,7 @@ function isWebdavCollectionResponse(responseText) {
         if (!selfClosing) namespaceStack.push({ qualifiedName, namespaces, insideDavResourceType });
     }
 
-    return foundCollection && rootElementSeen && namespaceStack.length === 0 && !xml.slice(position).trim();
+    return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && !xml.slice(position).trim();
 }
 
 function findXmlTagEnd(xml, start) {
