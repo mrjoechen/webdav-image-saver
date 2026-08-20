@@ -752,6 +752,8 @@ function isWebdavCollectionResponse(responseText) {
             const outsideRootText = xml.slice(position, tagStart);
             if (!isXmlWhitespace(outsideRootText)) return false;
             if (!rootElementSeen && outsideRootText) preRootConstructSeen = true;
+        } else if (!hasValidXmlEntityReferences(xml.slice(position, tagStart))) {
+            return false;
         }
 
         if (xml.startsWith('<!--', tagStart)) {
@@ -789,13 +791,14 @@ function isWebdavCollectionResponse(responseText) {
 
         const tagEnd = findXmlTagEnd(xml, tagStart + 1);
         if (tagEnd < 0) return false;
-        const tagSource = trimXmlWhitespace(xml.slice(tagStart + 1, tagEnd));
+        const rawTagSource = xml.slice(tagStart + 1, tagEnd);
+        const tagSource = trimTrailingXmlWhitespace(rawTagSource);
         position = tagEnd + 1;
-        if (!tagSource) return false;
+        if (!tagSource || isXmlWhitespaceCharacter(tagSource[0])) return false;
 
         if (tagSource.startsWith('!')) return false;
         if (tagSource.startsWith('/')) {
-            const closingName = trimXmlWhitespace(tagSource.slice(1));
+            const closingName = trimTrailingXmlWhitespace(tagSource.slice(1));
             if (!isXmlQualifiedName(closingName)) return false;
             const frame = namespaceStack.pop();
             if (!frame || frame.qualifiedName !== closingName) return false;
@@ -804,7 +807,8 @@ function isWebdavCollectionResponse(responseText) {
         }
 
         const selfClosing = /\/$/.test(tagSource);
-        const startTagSource = selfClosing ? trimXmlWhitespace(tagSource.slice(0, -1)) : tagSource;
+        if (selfClosing && rawTagSource.length !== tagSource.length) return false;
+        const startTagSource = selfClosing ? trimTrailingXmlWhitespace(tagSource.slice(0, -1)) : tagSource;
         const nameMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)(?=[\x20\x09\x0D\x0A]|$)/.exec(startTagSource);
         if (!nameMatch) return false;
 
@@ -825,18 +829,24 @@ function isWebdavCollectionResponse(responseText) {
         const resolvedName = resolveXmlQualifiedName(qualifiedName, namespaces);
         if (!resolvedName) return false;
 
-        const parentIsDavResourceType = parentFrame?.insideDavResourceType || false;
+        const parentIsDavResourceType = parentFrame?.localName === 'resourcetype' && parentFrame.namespaceUri === 'DAV:';
         if (parentIsDavResourceType && resolvedName.localName === 'collection' && resolvedName.namespaceUri === 'DAV:') {
             foundCollection = true;
         }
 
-        const insideDavResourceType = parentIsDavResourceType || (
-            resolvedName.localName === 'resourcetype' && resolvedName.namespaceUri === 'DAV:'
-        );
-        if (!selfClosing) namespaceStack.push({ qualifiedName, namespaces, insideDavResourceType });
+        if (!selfClosing) {
+            namespaceStack.push({
+                qualifiedName,
+                namespaces,
+                localName: resolvedName.localName,
+                namespaceUri: resolvedName.namespaceUri
+            });
+        }
     }
 
-    return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && isXmlWhitespace(xml.slice(position));
+    const trailingText = xml.slice(position);
+    if (namespaceStack.length > 0 && !hasValidXmlEntityReferences(trailingText)) return false;
+    return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && isXmlWhitespace(trailingText);
 }
 
 function isXmlWhitespace(value) {
@@ -847,12 +857,45 @@ function isXmlWhitespaceCharacter(value) {
     return value === ' ' || value === '\t' || value === '\r' || value === '\n';
 }
 
-function trimXmlWhitespace(value) {
-    return String(value).replace(/^[\x20\x09\x0D\x0A]+|[\x20\x09\x0D\x0A]+$/g, '');
+function trimTrailingXmlWhitespace(value) {
+    return String(value).replace(/[\x20\x09\x0D\x0A]+$/g, '');
 }
 
 function isValidXmlDeclaration(instructionSource) {
     return /^xml[\x20\x09\x0D\x0A]+version[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])(?:1\.0|1\.1)\1(?:[\x20\x09\x0D\x0A]+encoding[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])[A-Za-z][A-Za-z0-9._-]*\2)?(?:[\x20\x09\x0D\x0A]+standalone[\x20\x09\x0D\x0A]*=[\x20\x09\x0D\x0A]*(['"])(?:yes|no)\3)?[\x20\x09\x0D\x0A]*$/.test(instructionSource);
+}
+
+function hasValidXmlEntityReferences(value) {
+    const text = String(value);
+    for (let index = 0; index < text.length; index += 1) {
+        if (text[index] !== '&') continue;
+        const semicolon = text.indexOf(';', index + 1);
+        if (semicolon < 0 || !isValidXmlEntityReference(text.slice(index + 1, semicolon))) return false;
+        index = semicolon;
+    }
+    return true;
+}
+
+function isValidXmlEntityReference(reference) {
+    if (['amp', 'lt', 'gt', 'apos', 'quot'].includes(reference)) return true;
+
+    let codePoint;
+    if (/^#[0-9]+$/.test(reference)) {
+        codePoint = Number.parseInt(reference.slice(1), 10);
+    } else if (/^#x[0-9A-Fa-f]+$/.test(reference)) {
+        codePoint = Number.parseInt(reference.slice(2), 16);
+    } else {
+        return false;
+    }
+
+    return Number.isSafeInteger(codePoint) && isValidXmlCharacter(codePoint);
+}
+
+function isValidXmlCharacter(codePoint) {
+    return codePoint === 0x09 || codePoint === 0x0A || codePoint === 0x0D ||
+        (codePoint >= 0x20 && codePoint <= 0xD7FF) ||
+        (codePoint >= 0xE000 && codePoint <= 0xFFFD) ||
+        (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
 }
 
 function findXmlTagEnd(xml, start) {
@@ -901,6 +944,7 @@ function parseXmlNamespaceDeclarations(attributeSource) {
         if (valueEnd < 0) return null;
         const value = attributeSource.slice(position, valueEnd);
         position = valueEnd + 1;
+        if (!hasValidXmlEntityReferences(value)) return null;
 
         if (attributeName === 'xmlns') declarations[''] = value;
         else if (attributeName.startsWith('xmlns:')) declarations[attributeName.slice('xmlns:'.length)] = value;

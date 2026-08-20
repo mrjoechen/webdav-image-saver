@@ -333,6 +333,76 @@ test('enforces XML S whitespace in WebDAV processing instructions and declaratio
   await validWorker.ensureWebdavDirectories(server, ['/Images']);
 });
 
+test('requires DAV collection markers to be direct resourcetype children', async () => {
+  const nestedCollectionBody = '<D:multistatus xmlns:D="DAV:"><D:resourcetype><x><D:collection/></x></D:resourcetype></D:multistatus>';
+  let nestedCalls = 0;
+  const nestedWorker = await createWorker(async (_url, options) => {
+    nestedCalls += 1;
+    return options.method === 'MKCOL' ? response(405) : response(207, '', nestedCollectionBody);
+  });
+
+  await assert.rejects(nestedWorker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+  await assert.rejects(nestedWorker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+  assert.equal(nestedCalls, 4);
+
+  for (const collectionTag of ['<D:collection/>', '<D:collection></D:collection>']) {
+    const directBody = `<D:multistatus xmlns:D="DAV:"><D:resourcetype>${collectionTag}</D:resourcetype></D:multistatus>`;
+    const directWorker = await createWorker(async (_url, options) => (
+      options.method === 'MKCOL' ? response(405) : response(207, '', directBody)
+    ));
+    await directWorker.ensureWebdavDirectories(server, ['/Images']);
+  }
+});
+
+test('rejects leading XML whitespace inside start and end tags', async () => {
+  const invalidBodies = [
+    '< D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype>< /D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></ D:multistatus>'
+  ];
+
+  for (const body of invalidBodies) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+    });
+
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    assert.equal(calls, 4);
+  }
+});
+
+test('validates entity references in WebDAV XML text and attributes', async () => {
+  const invalidBodies = [
+    '<D:multistatus xmlns:D="DAV:">bare & text<D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:">&notDeclared;<D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:">&#0;<D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:">&#xD800;<D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:" data="&notDeclared;"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>',
+    '<D:multistatus xmlns:D="DAV:" xmlns:x="&notDeclared;"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>'
+  ];
+
+  for (const body of invalidBodies) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+    });
+
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    assert.equal(calls, 4);
+  }
+
+  const validBody = '<D:multistatus xmlns:D="DAV:" data="&amp;">&#65;&#x20;&amp;&lt;&gt;&apos;&quot;<D:resourcetype><D:collection/></D:resourcetype></D:multistatus>';
+  const validWorker = await createWorker(async (_url, options) => (
+    options.method === 'MKCOL' ? response(405) : response(207, '', validBody)
+  ));
+  await validWorker.ensureWebdavDirectories(server, ['/Images']);
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;
