@@ -528,6 +528,92 @@ test('future-schema save settings submit only explicit edits instead of UI fallb
   assert.equal(explicitFallback.harness.testApi.getState().persisted.directory.rule, 'project');
 });
 
+test('future custom templates stay preserved until a filename control is explicitly edited', async () => {
+  const futureSettings = {
+    schemaVersion: 4,
+    image: { saveFormat: 'original' },
+    filename: { rule: 'custom', customTemplate: '{futureVariable}' },
+    directory: { rule: 'project' }
+  };
+
+  function createFutureCustomHarness() {
+    const updates = [];
+    const harness = createOptionsHarness({
+      settings: futureSettings,
+      updateSettings: async (_storage, update) => {
+        updates.push(update);
+        return {
+          ...futureSettings,
+          image: { ...futureSettings.image, ...update.image },
+          filename: { ...futureSettings.filename, ...update.filename },
+          directory: { ...futureSettings.directory, ...update.directory }
+        };
+      }
+    });
+    return { harness, updates };
+  }
+
+  const direct = createFutureCustomHarness();
+  await direct.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await direct.harness.elements['save-settings-btn'].emit('click');
+  assert.equal(direct.harness.elements['filename-rule'].value, 'custom');
+  assert.equal(direct.harness.elements['filename-template'].value, '{futureVariable}');
+  assert.equal(direct.harness.elements['filename-template'].getAttribute('aria-invalid'), 'false');
+  assert.equal(direct.harness.elements['filename-template-error'].textContent, '');
+  assert.equal(direct.harness.elements['save-save-settings-btn'].disabled, false);
+  await direct.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(JSON.parse(JSON.stringify(direct.updates)), [{}]);
+
+  const unrelatedEdit = createFutureCustomHarness();
+  await unrelatedEdit.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await unrelatedEdit.harness.elements['save-settings-btn'].emit('click');
+  unrelatedEdit.harness.elements['directory-rule'].value = 'date';
+  await unrelatedEdit.harness.elements['directory-rule'].emit('change');
+  assert.equal(unrelatedEdit.harness.elements['save-save-settings-btn'].disabled, false);
+  await unrelatedEdit.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(unrelatedEdit.updates)),
+    [{ directory: { rule: 'date' } }]
+  );
+  assert.equal(unrelatedEdit.harness.testApi.getState().persisted.filename.rule, 'custom');
+  assert.equal(unrelatedEdit.harness.testApi.getState().persisted.filename.customTemplate, '{futureVariable}');
+
+  const templateEdit = createFutureCustomHarness();
+  await templateEdit.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await templateEdit.harness.elements['save-settings-btn'].emit('click');
+  await templateEdit.harness.elements['filename-template'].emit('input');
+  assert.equal(templateEdit.harness.elements['filename-template'].getAttribute('aria-invalid'), 'true');
+  assert.equal(templateEdit.harness.elements['save-save-settings-btn'].disabled, true);
+  await templateEdit.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(templateEdit.updates, []);
+  templateEdit.harness.elements['filename-template'].value = '{domain}.{ext}';
+  await templateEdit.harness.elements['filename-template'].emit('input');
+  assert.equal(templateEdit.harness.elements['save-save-settings-btn'].disabled, false);
+  await templateEdit.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(templateEdit.updates)),
+    [{ filename: { customTemplate: '{domain}.{ext}' } }]
+  );
+
+  const ruleEdit = createFutureCustomHarness();
+  await ruleEdit.harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await ruleEdit.harness.elements['save-settings-btn'].emit('click');
+  await ruleEdit.harness.elements['filename-rule'].emit('change');
+  assert.equal(ruleEdit.harness.elements['filename-template'].getAttribute('aria-invalid'), 'true');
+  await ruleEdit.harness.elements['save-settings-form'].emit('submit');
+  assert.deepEqual(ruleEdit.updates, []);
+
+  await ruleEdit.harness.elements['cancel-save-settings-btn'].emit('click');
+  await ruleEdit.harness.elements['save-settings-btn'].emit('click');
+  assert.equal(ruleEdit.harness.elements['filename-template'].getAttribute('aria-invalid'), 'false');
+  assert.equal(ruleEdit.harness.elements['filename-template-error'].textContent, '');
+  assert.equal(ruleEdit.harness.elements['save-save-settings-btn'].disabled, false);
+});
+
 test('save settings disables while writing and recovers from a deferred failed write', async () => {
   let resolveUpdate;
   const deferredUpdate = new Promise(resolve => { resolveUpdate = resolve; });

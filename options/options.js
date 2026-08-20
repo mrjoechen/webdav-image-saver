@@ -453,23 +453,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateFilenameRuleEditor() {
-    const isCustom = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value) === 'custom';
+    const filenameRule = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value);
+    const isCustom = filenameRule === 'custom';
     elements.filenameTemplateGroup?.toggleAttribute('hidden', !isCustom);
     const template = elements.filenameTemplate?.value || '';
     const validation = FilenameRule.validateTemplate(template.trim());
-    const invalid = isCustom && !validation.valid;
+    const filenameControlsUntouched = !dirtySaveSettingsFields.has('filename.rule') &&
+      !dirtySaveSettingsFields.has('filename.customTemplate');
+    const preservesFutureFilenameValues = persistedSaveSettings.schemaVersion > currentSettingsSchemaVersion &&
+      filenameControlsUntouched &&
+      filenameRule === FilenameRule.normalizeFilenameRule(persistedSaveSettings.filename.rule) &&
+      template === String(persistedSaveSettings.filename.customTemplate ?? '');
+    const effectiveValidation = isCustom && preservesFutureFilenameValues
+      ? { valid: true, error: '' }
+      : validation;
+    const invalid = isCustom && !effectiveValidation.valid;
 
     if (elements.filenameTemplate) {
       elements.filenameTemplate.setAttribute('aria-invalid', String(invalid));
       elements.filenameTemplate.classList.toggle('is-invalid', invalid);
     }
     if (elements.filenameTemplateError) {
-      elements.filenameTemplateError.textContent = invalid ? validation.error : '';
+      elements.filenameTemplateError.textContent = invalid ? effectiveValidation.error : '';
       elements.filenameTemplateError.classList.toggle('hidden', !invalid);
     }
     if (elements.saveSaveSettingsBtn && !isSaving) elements.saveSaveSettingsBtn.disabled = invalid;
     updateFilenamePreview();
-    return validation;
+    return effectiveValidation;
   }
 
   function updateFilenamePreview() {
