@@ -662,54 +662,17 @@ async function ensureWebdavDirectories(serverConfig, folders) {
 
 async function ensureWebdavDirectory(serverConfig, folder) {
     const targetUrl = buildWebdavCollectionUrl(serverConfig.url, folder);
-    const cacheKey = await webdavDirectoryCacheKey(serverConfig, targetUrl);
     const cacheGeneration = webdavDirectoryCacheGeneration;
+    const cacheKey = await webdavDirectoryCacheKey(serverConfig, targetUrl);
+    if (cacheGeneration !== webdavDirectoryCacheGeneration) {
+        return createWebdavDirectory(serverConfig, targetUrl, null, cacheGeneration);
+    }
     if (confirmedWebdavCollections.has(cacheKey)) return;
 
     const existingCreation = webdavDirectoryCreationPromises.get(cacheKey);
     if (existingCreation) return existingCreation;
 
-    const creation = (async () => {
-        const headers = new Headers();
-        headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
-
-        const response = await fetch(targetUrl, {
-            method: 'MKCOL',
-            headers,
-            mode: 'cors',
-            credentials: 'omit'
-        });
-
-        if (response.ok) {
-            confirmWebdavDirectory(cacheKey, cacheGeneration);
-            return;
-        }
-
-        if (response.status !== 405) {
-            throw webdavDirectoryError(response.status, response.statusText);
-        }
-
-        const verificationHeaders = new Headers();
-        verificationHeaders.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
-        verificationHeaders.append('Depth', '0');
-        verificationHeaders.append('Content-Type', 'application/xml; charset=utf-8');
-        const verification = await fetch(targetUrl, {
-            method: 'PROPFIND',
-            headers: verificationHeaders,
-            mode: 'cors',
-            credentials: 'omit',
-            body: '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>'
-        });
-
-        if (verification.ok || verification.status === 207) {
-            confirmWebdavDirectory(cacheKey, cacheGeneration);
-            return;
-        }
-        if (verification.status === 404) {
-            throw new Error('Cannot create directory: server does not support MKCOL and the directory does not exist.');
-        }
-        throw webdavDirectoryError(verification.status, verification.statusText, true);
-    })();
+    const creation = createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGeneration);
 
     webdavDirectoryCreationPromises.set(cacheKey, creation);
     try {
@@ -721,8 +684,50 @@ async function ensureWebdavDirectory(serverConfig, folder) {
     }
 }
 
+async function createWebdavDirectory(serverConfig, targetUrl, cacheKey, cacheGeneration) {
+    const headers = new Headers();
+    headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
+
+    const response = await fetch(targetUrl, {
+        method: 'MKCOL',
+        headers,
+        mode: 'cors',
+        credentials: 'omit'
+    });
+
+    if (response.ok) {
+        confirmWebdavDirectory(cacheKey, cacheGeneration);
+        return;
+    }
+
+    if (response.status !== 405) {
+        throw webdavDirectoryError(response.status, response.statusText);
+    }
+
+    const verificationHeaders = new Headers();
+    verificationHeaders.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
+    verificationHeaders.append('Depth', '0');
+    verificationHeaders.append('Content-Type', 'application/xml; charset=utf-8');
+    const verification = await fetch(targetUrl, {
+        method: 'PROPFIND',
+        headers: verificationHeaders,
+        mode: 'cors',
+        credentials: 'omit',
+        body: '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>'
+    });
+
+    if (verification.ok || verification.status === 207) {
+        confirmWebdavDirectory(cacheKey, cacheGeneration);
+        return;
+    }
+    if (verification.status === 404) {
+        throw new Error('Cannot create directory: server does not support MKCOL and the directory does not exist.');
+    }
+    throw webdavDirectoryError(verification.status, verification.statusText, true);
+}
+
 function confirmWebdavDirectory(cacheKey, cacheGeneration) {
-    if (cacheGeneration === webdavDirectoryCacheGeneration) {
+    if (cacheKey && cacheGeneration === webdavDirectoryCacheGeneration) {
         confirmedWebdavCollections.add(cacheKey);
     }
 }

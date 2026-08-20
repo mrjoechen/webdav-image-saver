@@ -43,7 +43,7 @@ async function createWorker(fetchImpl, options = {}) {
     Headers,
     TextEncoder,
     URL,
-    crypto: webcrypto,
+    crypto: options.crypto || webcrypto,
     btoa(value) { return Buffer.from(value, 'binary').toString('base64'); },
     console: { log() {}, warn() {}, error() {} },
     AppSettings: {
@@ -239,6 +239,36 @@ test('reset isolates new work from stale in-flight authorization and stale cache
   await retry;
   await worker.ensureWebdavDirectories(server, ['/Images']);
   assert.equal(calls, 3);
+});
+
+test('reset during credential fingerprinting leaves the stale creation uncached', async () => {
+  let releaseDigest;
+  let digestStarted = false;
+  const digestGate = new Promise(resolve => { releaseDigest = resolve; });
+  const controlledCrypto = {
+    subtle: {
+      async digest(...args) {
+        digestStarted = true;
+        await digestGate;
+        return webcrypto.subtle.digest(...args);
+      }
+    }
+  };
+  let calls = 0;
+  const worker = await createWorker(async () => {
+    calls += 1;
+    return response(201);
+  }, { crypto: controlledCrypto });
+
+  const staleEnsure = worker.ensureWebdavDirectories(server, ['/Images']);
+  await waitFor(() => digestStarted, 'credential fingerprinting did not start');
+  worker.resetWebdavDirectoryCache();
+  releaseDigest();
+  await staleEnsure;
+  assert.equal(calls, 1);
+
+  await worker.ensureWebdavDirectories(server, ['/Images']);
+  assert.equal(calls, 2);
 });
 
 test('uses the prepared AVIF MIME type for the final filename and upload target', async () => {
