@@ -264,12 +264,44 @@ test('rejects malformed WebDAV verification XML without caching it', async () =>
 });
 
 test('accepts a well-formed collection response with XML declaration and comments', async () => {
-  const body = '<?xml version="1.0"?>\n<!-- before root -->\n<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>\n<!-- after root -->';
+  const body = '\uFEFF<?xml version="1.0" encoding="utf-8"?>\n<!-- before root -->\n<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>\n<!-- after root -->';
   const worker = await createWorker(async (_url, options) => (
     options.method === 'MKCOL' ? response(405) : response(207, '', body)
   ));
 
   await worker.ensureWebdavDirectories(server, ['/Images']);
+});
+
+test('validates WebDAV XML declarations before trusting a collection response', async () => {
+  const collectionRoot = '<D:multistatus xmlns:D="DAV:"><D:resourcetype><D:collection/></D:resourcetype></D:multistatus>';
+  const invalidBodies = [
+    `<?xml?>${collectionRoot}`,
+    `<?xml garbage?>${collectionRoot}`,
+    `<?xml version="1.0"?><?xml version="1.0"?>${collectionRoot}`,
+    `<?Xml version="1.0"?>${collectionRoot}`,
+    `<?xml-stylesheet href="style.xsl"?>${collectionRoot}`,
+    ` <?xml version="1.0"?>${collectionRoot}`,
+    `<!-- before declaration --><?xml version="1.0"?>${collectionRoot}`,
+    `<?processing instruction?><?xml version="1.0"?>${collectionRoot}`,
+    `<?xml encoding="utf-8" version="1.0"?>${collectionRoot}`,
+    `<?xml version="2.0"?>${collectionRoot}`,
+    `<?xml version="1.0" encoding="9bad"?>${collectionRoot}`,
+    `<?xml version="1.0" standalone="maybe"?>${collectionRoot}`,
+    `<?xml version="1.0" unknown="value"?>${collectionRoot}`,
+    `${collectionRoot}<?xml version="1.0"?>`
+  ];
+
+  for (const body of invalidBodies) {
+    let calls = 0;
+    const worker = await createWorker(async (_url, options) => {
+      calls += 1;
+      return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+    });
+
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+    assert.equal(calls, 4);
+  }
 });
 
 test('shares in-flight creation and caches confirmed collections', async () => {

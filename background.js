@@ -742,16 +742,22 @@ function isWebdavCollectionResponse(responseText) {
     let rootElementSeen = false;
     let rootElementClosed = false;
     let xmlDeclarationSeen = false;
-    let position = 0;
+    let preRootConstructSeen = false;
+    let position = xml.startsWith('\uFEFF') ? 1 : 0;
 
     while (position < xml.length) {
         const tagStart = xml.indexOf('<', position);
         if (tagStart < 0) break;
-        if (namespaceStack.length === 0 && xml.slice(position, tagStart).trim()) return false;
+        if (namespaceStack.length === 0) {
+            const outsideRootText = xml.slice(position, tagStart);
+            if (!isXmlWhitespace(outsideRootText)) return false;
+            if (!rootElementSeen && outsideRootText) preRootConstructSeen = true;
+        }
 
         if (xml.startsWith('<!--', tagStart)) {
             const commentEnd = xml.indexOf('-->', tagStart + 4);
             if (commentEnd < 0) return false;
+            if (!rootElementSeen) preRootConstructSeen = true;
             position = commentEnd + 3;
             continue;
         }
@@ -770,10 +776,12 @@ function isWebdavCollectionResponse(responseText) {
             if (!instructionMatch) return false;
             const instructionTarget = instructionMatch[1];
             if (instructionTarget === 'xml') {
-                if (xmlDeclarationSeen || rootElementSeen) return false;
+                if (xmlDeclarationSeen || rootElementSeen || preRootConstructSeen || !isValidXmlDeclaration(instructionSource)) return false;
                 xmlDeclarationSeen = true;
-            } else if (instructionTarget.toLowerCase() === 'xml') {
+            } else if (instructionTarget.toLowerCase().startsWith('xml')) {
                 return false;
+            } else if (!rootElementSeen) {
+                preRootConstructSeen = true;
             }
             position = declarationEnd + 2;
             continue;
@@ -828,7 +836,15 @@ function isWebdavCollectionResponse(responseText) {
         if (!selfClosing) namespaceStack.push({ qualifiedName, namespaces, insideDavResourceType });
     }
 
-    return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && !xml.slice(position).trim();
+    return foundCollection && rootElementSeen && rootElementClosed && namespaceStack.length === 0 && isXmlWhitespace(xml.slice(position));
+}
+
+function isXmlWhitespace(value) {
+    return /^[\x20\x09\x0D\x0A]*$/.test(value);
+}
+
+function isValidXmlDeclaration(instructionSource) {
+    return /^xml\s+version\s*=\s*(['"])(?:1\.0|1\.1)\1(?:\s+encoding\s*=\s*(['"])[A-Za-z][A-Za-z0-9._-]*\2)?(?:\s+standalone\s*=\s*(['"])(?:yes|no)\3)?$/.test(instructionSource);
 }
 
 function findXmlTagEnd(xml, start) {
