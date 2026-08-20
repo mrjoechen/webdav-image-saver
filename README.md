@@ -209,14 +209,45 @@ STORE_DESCRIPTION.md
 
 Do not include repository-only files in the upload ZIP, such as `.git`, `docs/`, development notes, screenshots-in-progress, or OS metadata.
 
-Manual packaging example:
+Manual packaging example (run from anywhere inside the repository). It resolves the repository root, uses fresh task-specific temporary directories for both staging and the archive, and places `manifest.json` at the ZIP root:
 
 ```bash
-mkdir -p dist/webdav-image-saver
-cp manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
-cp -R assets icons options dist/webdav-image-saver/
-cd dist
-zip -X -r webdav-image-saver.zip webdav-image-saver
+set -eu
+
+package_repo_root="$(git rev-parse --show-toplevel)"
+package_staging="$(mktemp -d "${TMPDIR:-/tmp}/webdav-image-saver-staging.XXXXXX")"
+package_archive_dir="$(mktemp -d "${TMPDIR:-/tmp}/webdav-image-saver-archive.XXXXXX")"
+package_archive="$package_archive_dir/webdav-image-saver.zip"
+
+cp \
+  "$package_repo_root/manifest.json" \
+  "$package_repo_root/image-format.js" \
+  "$package_repo_root/filename-rule.js" \
+  "$package_repo_root/directory-rule.js" \
+  "$package_repo_root/settings.js" \
+  "$package_repo_root/background.js" \
+  "$package_repo_root/content_script.js" \
+  "$package_repo_root/PRIVACY.md" \
+  "$package_repo_root/STORE_DESCRIPTION.md" \
+  "$package_staging/"
+cp -R \
+  "$package_repo_root/assets" \
+  "$package_repo_root/icons" \
+  "$package_repo_root/options" \
+  "$package_staging/"
+
+(
+  cd "$package_staging"
+  zip -X -r "$package_archive" . \
+    -x '*.DS_Store' \
+    -x '__MACOSX/*' \
+    -x '*/__MACOSX/*'
+)
+
+mkdir -p "$package_repo_root/dist"
+mv "$package_archive" "$package_repo_root/dist/webdav-image-saver.zip"
+rmdir "$package_archive_dir"
+rm -rf "$package_staging"
 ```
 
 Before upload, verify:

@@ -210,14 +210,45 @@ STORE_DESCRIPTION.md
 
 上传 ZIP 中不要包含仅供仓库使用的文件，例如 `.git`、`docs/`、开发笔记、未完成截图或系统元数据。
 
-手动打包示例：
+手动打包示例（可在仓库内任意目录执行）。该命令会解析仓库根目录，为暂存内容和压缩包分别创建全新的任务专用临时目录，并将 `manifest.json` 放在 ZIP 根层：
 
 ```bash
-mkdir -p dist/webdav-image-saver
-cp manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md dist/webdav-image-saver/
-cp -R assets icons options dist/webdav-image-saver/
-cd dist
-zip -X -r webdav-image-saver.zip webdav-image-saver
+set -eu
+
+package_repo_root="$(git rev-parse --show-toplevel)"
+package_staging="$(mktemp -d "${TMPDIR:-/tmp}/webdav-image-saver-staging.XXXXXX")"
+package_archive_dir="$(mktemp -d "${TMPDIR:-/tmp}/webdav-image-saver-archive.XXXXXX")"
+package_archive="$package_archive_dir/webdav-image-saver.zip"
+
+cp \
+  "$package_repo_root/manifest.json" \
+  "$package_repo_root/image-format.js" \
+  "$package_repo_root/filename-rule.js" \
+  "$package_repo_root/directory-rule.js" \
+  "$package_repo_root/settings.js" \
+  "$package_repo_root/background.js" \
+  "$package_repo_root/content_script.js" \
+  "$package_repo_root/PRIVACY.md" \
+  "$package_repo_root/STORE_DESCRIPTION.md" \
+  "$package_staging/"
+cp -R \
+  "$package_repo_root/assets" \
+  "$package_repo_root/icons" \
+  "$package_repo_root/options" \
+  "$package_staging/"
+
+(
+  cd "$package_staging"
+  zip -X -r "$package_archive" . \
+    -x '*.DS_Store' \
+    -x '__MACOSX/*' \
+    -x '*/__MACOSX/*'
+)
+
+mkdir -p "$package_repo_root/dist"
+mv "$package_archive" "$package_repo_root/dist/webdav-image-saver.zip"
+rmdir "$package_archive_dir"
+rm -rf "$package_staging"
 ```
 
 上传前请确认：
