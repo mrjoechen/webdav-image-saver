@@ -465,6 +465,44 @@ test('rejects illegal XML lexical content in collection responses without cachin
   }
 });
 
+test('requires XML whitespace between WebDAV response attributes', async t => {
+  const collection = '<D:resourcetype><D:collection/></D:resourcetype>';
+  const invalidBodies = [
+    `<D:multistatus xmlns:D="DAV:"x="1">${collection}</D:multistatus>`,
+    `<D:multistatus xmlns:D="DAV:" data="a"other="b">${collection}</D:multistatus>`
+  ];
+
+  for (const [index, body] of invalidBodies.entries()) {
+    await t.test(`rejects adjacent attributes without XML S (${index + 1})`, async () => {
+      let calls = 0;
+      const worker = await createWorker(async (_url, options) => {
+        calls += 1;
+        return options.method === 'MKCOL' ? response(405) : response(207, '', body);
+      });
+
+      await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+      await assert.rejects(worker.ensureWebdavDirectories(server, ['/Images']), /not a collection\/directory/i);
+      assert.equal(calls, 4, 'an invalid attribute list must not be cached');
+    });
+  }
+
+  for (const [name, separator] of [
+    ['space', ' '],
+    ['tab', '\t'],
+    ['carriage return', '\r'],
+    ['line feed', '\n']
+  ]) {
+    await t.test(`accepts attributes separated by ${name}`, async () => {
+      const body = `<D:multistatus xmlns:D="DAV:"${separator}data="ok">${collection}</D:multistatus>`;
+      const worker = await createWorker(async (_url, options) => (
+        options.method === 'MKCOL' ? response(405) : response(207, '', body)
+      ));
+
+      await worker.ensureWebdavDirectories(server, ['/Images']);
+    });
+  }
+});
+
 test('shares in-flight creation and caches confirmed collections', async () => {
   let resolveRequest;
   let requestCount = 0;

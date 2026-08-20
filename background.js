@@ -938,8 +938,10 @@ function parseXmlNamespaceDeclarations(attributeSource) {
     let position = 0;
 
     while (position < attributeSource.length) {
+        const whitespaceStart = position;
         while (position < attributeSource.length && isXmlWhitespaceCharacter(attributeSource[position])) position += 1;
         if (position >= attributeSource.length) break;
+        if (position === whitespaceStart) return null;
 
         const attributeMatch = /^([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(attributeSource.slice(position));
         if (!attributeMatch) return null;
