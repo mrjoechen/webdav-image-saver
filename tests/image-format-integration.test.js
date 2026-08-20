@@ -9,7 +9,7 @@ function readProjectFile(relativePath) {
   return readFileSync(path.join(projectRoot, relativePath), 'utf8');
 }
 
-test('background loads format support and routes selected formats through conversion', () => {
+test('background loads save-rule support and routes selected formats through conversion', () => {
   const backgroundSource = readProjectFile('background.js');
 
   assert.match(backgroundSource, /importScripts\(['"]image-format\.js['"]\);\s*importScripts\(['"]filename-rule\.js['"]\);\s*importScripts\(['"]directory-rule\.js['"]\);\s*importScripts\(['"]settings\.js['"]\)/);
@@ -23,9 +23,21 @@ test('background loads format support and routes selected formats through conver
   assert.match(backgroundSource, /contentScriptInjectionPromises/);
   assert.match(backgroundSource, /message\.action === ['"]uploadCountdownComplete['"]/);
   assert.match(backgroundSource, /ImageFormat\.prepareImageForUpload/);
+  assert.match(backgroundSource, /pageTitle:\s*tab\.title\s*\|\|\s*''/);
+  assert.match(backgroundSource, /async function beginSaveFlow\(\{ serverConfig, imageUrl, pageUrl, pageTitle, tabId \}\)/);
+  assert.match(backgroundSource, /operation\.pageTitle/);
+  assert.match(backgroundSource, /FilenameRule\.readImageDimensions\(imageBlob\)/);
+  assert.match(backgroundSource, /FilenameRule\.extractSourceExtension\(imageUrl\)/);
+  assert.match(backgroundSource, /FilenameRule\.generateFilename\(/);
+  assert.match(backgroundSource, /DirectoryRule\.resolveDirectory\(/);
+  assert.match(backgroundSource, /await ensureWebdavDirectories\(serverConfig, targetDirectory\.foldersToCreate\)/);
+  assert.match(backgroundSource, /buildWebdavResourceUrl\(serverConfig\.url, targetDirectory\.folder, filename\)/);
+  assert.match(backgroundSource, /method:\s*'MKCOL'/);
+  assert.match(backgroundSource, /method:\s*'PROPFIND'/);
+  assert.match(backgroundSource, /\.append\('Depth', '0'\)/);
   assert.match(backgroundSource, /preparedImage\.mimeType/);
-  assert.match(backgroundSource, /preparedImage\.filename/);
   assert.match(backgroundSource, /preparedImage\.blob/);
+  assert.doesNotMatch(backgroundSource, /function generateFilename\(/);
   assert.doesNotMatch(backgroundSource, /setTimeout\s*\(/);
 });
 

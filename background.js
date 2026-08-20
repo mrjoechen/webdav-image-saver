@@ -11,6 +11,8 @@ let configReloadQueue = Promise.resolve();
 const PENDING_UPLOAD_PREFIX = 'pendingUpload_';
 const processingUploadIds = new Set();
 const contentScriptInjectionPromises = new Map();
+const confirmedWebdavCollections = new Set();
+const webdavDirectoryCreationPromises = new Map();
 
 // --- Initialization ---
 chrome.runtime.onInstalled.addListener(() => {
@@ -29,6 +31,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 serverConfig,
                 imageUrl: info.srcUrl,
                 pageUrl: info.pageUrl || tab.url,
+                pageTitle: tab.title || '',
                 tabId: tab.id
             });
         } catch (error) {
@@ -70,7 +73,7 @@ async function ensureContentScript(tabId) {
     }
 }
 
-async function beginSaveFlow({ serverConfig, imageUrl, pageUrl, tabId }) {
+async function beginSaveFlow({ serverConfig, imageUrl, pageUrl, pageTitle, tabId }) {
     const uploadId = `upload_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
     const operation = {
         uploadId,
@@ -78,6 +81,7 @@ async function beginSaveFlow({ serverConfig, imageUrl, pageUrl, tabId }) {
         serverName: serverConfig.name,
         imageUrl,
         pageUrl,
+        pageTitle,
         tabId
     };
 
@@ -201,6 +205,7 @@ async function handleUploadCountdownComplete(uploadId, tabId) {
         await uploadImage(
             operation.imageUrl,
             operation.pageUrl,
+            operation.pageTitle,
             serverConfig,
             uploadId,
             tabId,
@@ -311,6 +316,7 @@ async function loadConfig() {
         
         webdavServers = localData.webdavServers || syncData.webdavServers || [];
         appSettings = loadedSettings;
+        resetWebdavDirectoryCache();
         console.log("Configuration loaded:", webdavServers.length, "servers");
         
         // Migrate from sync to local if needed
@@ -381,7 +387,7 @@ function createContextMenus() {
 
 
 // --- Image Upload Logic ---
-async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId, targetFormat = 'original') {
+async function uploadImage(imageUrl, pageUrl, pageTitle, serverConfig, uploadId, tabId, targetFormat = 'original') {
     let success = false;
     let status = 'error';
     let statusMessage = '';
@@ -394,18 +400,50 @@ async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId, tar
         const imageBlob = await response.blob();
         console.log(`[${uploadId}] Image fetched: ${imageBlob.size} bytes, type: ${imageBlob.type}`);
 
-        filename = generateFilename(imageUrl, pageUrl, imageBlob.type);
+        const uploadTime = new Date();
+        const dimensions = await FilenameRule.readImageDimensions(imageBlob);
+        const sourceExtension = FilenameRule.extractSourceExtension(imageUrl);
+        const provisionalExtension = ImageFormat.extensionForMimeType(imageBlob.type, sourceExtension);
+        const provisionalFilename = FilenameRule.generateFilename({
+            rule: 'automatic',
+            imageUrl,
+            pageUrl,
+            extension: provisionalExtension,
+            now: uploadTime
+        });
         const preparedImage = await ImageFormat.prepareImageForUpload({
             blob: imageBlob,
-            filename,
+            filename: provisionalFilename,
             targetFormat
         });
-        filename = preparedImage.filename;
+        const finalExtension = ImageFormat.extensionForMimeType(
+            preparedImage.mimeType,
+            extractFilenameExtension(preparedImage.filename)
+        );
+        filename = FilenameRule.generateFilename({
+            rule: appSettings.filename.rule,
+            template: appSettings.filename.customTemplate,
+            imageUrl,
+            pageUrl,
+            pageTitle,
+            width: dimensions.width,
+            height: dimensions.height,
+            extension: finalExtension,
+            now: uploadTime
+        });
         if (preparedImage.warningDetail) {
             console.warn(`[${uploadId}] Image conversion fallback:`, preparedImage.warningDetail);
         }
 
-        const targetUrl = buildWebdavResourceUrl(serverConfig.url, serverConfig.folder || '/', preparedImage.filename);
+        const targetDirectory = DirectoryRule.resolveDirectory({
+            rule: appSettings.directory.rule,
+            rootFolder: serverConfig.folder || '/',
+            pageUrl,
+            now: uploadTime
+        });
+        await ensureWebdavDirectories(serverConfig, targetDirectory.foldersToCreate);
+
+        const targetUrl = buildWebdavResourceUrl(serverConfig.url, targetDirectory.folder, filename);
         console.log(`[${uploadId}] Target WebDAV URL: ${targetUrl}`);
 
         const headers = new Headers();
@@ -421,7 +459,7 @@ async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId, tar
             success = true;
             status = preparedImage.warningCode ? 'warning' : 'success';
             statusMessage = preparedImage.warningCode
-                ? getConversionWarningMessage(preparedImage)
+                ? getConversionWarningMessage(preparedImage, filename)
                 : `Saved as "${filename}"`;
         } else {
              let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
@@ -452,9 +490,9 @@ async function uploadImage(imageUrl, pageUrl, serverConfig, uploadId, tabId, tar
     }).catch(e => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, e));
     }
 
-function getConversionWarningMessage(preparedImage) {
-    const filenameExtension = preparedImage.filename.includes('.')
-        ? preparedImage.filename.split('.').pop()
+function getConversionWarningMessage(preparedImage, finalFilename) {
+    const filenameExtension = finalFilename.includes('.')
+        ? finalFilename.split('.').pop()
         : '';
     const mimeSubtype = preparedImage.mimeType.includes('/')
         ? preparedImage.mimeType.split('/').pop().split('+')[0]
@@ -466,36 +504,9 @@ function getConversionWarningMessage(preparedImage) {
     return `Saved original ${originalFormat}; this image could not be converted.`;
 }
 
-// --- Filename Generation ---
-function generateFilename(imageUrl, pageUrl, mimeType = '') {
-    try {
-        const url = new URL(imageUrl);
-        const page = new URL(pageUrl); // Use pageUrl for hostname
-
-        const pathname = url.pathname;
-        const lastDot = pathname.lastIndexOf('.');
-        const urlExtension = lastDot > pathname.lastIndexOf('/') ? pathname.substring(lastDot + 1) : 'bin';
-        const extension = ImageFormat.extensionForMimeType(mimeType, urlExtension);
-
-        // Get date timestamp YYYYMMDDHHMMSS
-        const now = new Date();
-        const timestamp = now.getFullYear().toString() +
-                          (now.getMonth() + 1).toString().padStart(2, '0') +
-                          now.getDate().toString().padStart(2, '0') +
-                          now.getHours().toString().padStart(2, '0') +
-                          now.getMinutes().toString().padStart(2, '0') +
-                          now.getSeconds().toString().padStart(2, '0');
-
-        // Get hostname and replace dots with underscores
-        const hostname = page.hostname.replace(/\./g, '_');
-
-        return `image_${timestamp}_${hostname}.${extension}`;
-    } catch (e) {
-        console.error("Error generating filename:", e);
-        const timestamp = Date.now();
-        const fallbackExt = ImageFormat.extensionForMimeType(mimeType, 'bin');
-        return `image_${timestamp}_fallback.${fallbackExt}`;
-    }
+function extractFilenameExtension(filename) {
+    const match = /\.([a-z0-9]{1,10})$/i.exec(String(filename || ''));
+    return match ? match[1].toLowerCase() : 'bin';
 }
 
 // --- WebDAV Folder Browsing ---
@@ -640,6 +651,89 @@ function buildWebdavCollectionUrl(baseUrl, folder) {
 
 function buildWebdavResourceUrl(baseUrl, folder, filename) {
     return `${buildWebdavCollectionUrl(baseUrl, folder)}${encodeURIComponent(filename)}`;
+}
+
+async function ensureWebdavDirectories(serverConfig, folders) {
+    for (const folder of folders || []) {
+        await ensureWebdavDirectory(serverConfig, folder);
+    }
+}
+
+async function ensureWebdavDirectory(serverConfig, folder) {
+    const targetUrl = buildWebdavCollectionUrl(serverConfig.url, folder);
+    const cacheKey = `${serverConfig.username || ''}\n${targetUrl}`;
+    if (confirmedWebdavCollections.has(cacheKey)) return;
+
+    const existingCreation = webdavDirectoryCreationPromises.get(cacheKey);
+    if (existingCreation) return existingCreation;
+
+    const creation = (async () => {
+        const headers = new Headers();
+        headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
+
+        const response = await fetch(targetUrl, {
+            method: 'MKCOL',
+            headers,
+            mode: 'cors',
+            credentials: 'omit'
+        });
+
+        if (response.ok) {
+            confirmedWebdavCollections.add(cacheKey);
+            return;
+        }
+
+        if (response.status !== 405) {
+            throw webdavDirectoryError(response.status, response.statusText);
+        }
+
+        const verificationHeaders = new Headers();
+        verificationHeaders.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
+        verificationHeaders.append('Depth', '0');
+        verificationHeaders.append('Content-Type', 'application/xml; charset=utf-8');
+        const verification = await fetch(targetUrl, {
+            method: 'PROPFIND',
+            headers: verificationHeaders,
+            mode: 'cors',
+            credentials: 'omit',
+            body: '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>'
+        });
+
+        if (verification.ok || verification.status === 207) {
+            confirmedWebdavCollections.add(cacheKey);
+            return;
+        }
+        if (verification.status === 404) {
+            throw new Error('Cannot create directory: server does not support MKCOL and the directory does not exist.');
+        }
+        throw webdavDirectoryError(verification.status, verification.statusText, true);
+    })();
+
+    webdavDirectoryCreationPromises.set(cacheKey, creation);
+    try {
+        await creation;
+    } finally {
+        if (webdavDirectoryCreationPromises.get(cacheKey) === creation) {
+            webdavDirectoryCreationPromises.delete(cacheKey);
+        }
+    }
+}
+
+function webdavDirectoryError(status, statusText, isVerification = false) {
+    if (status === 401) return new Error('Directory creation authentication failed. Check username and password.');
+    if (status === 403) return new Error('Directory creation permission denied.');
+    if (status === 409) return new Error('Cannot create directory because its parent does not exist.');
+    const operation = isVerification
+        ? 'Failed to verify directory after MKCOL was not allowed'
+        : 'Failed to create directory';
+    return new Error(`${operation}: ${status} ${statusText || ''}`.trim());
+}
+
+function resetWebdavDirectoryCache() {
+    confirmedWebdavCollections.clear();
+    if (webdavDirectoryCreationPromises.size === 0) {
+        webdavDirectoryCreationPromises.clear();
+    }
 }
 
 function basicAuthHeader(username, password) {
