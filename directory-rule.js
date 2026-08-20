@@ -61,7 +61,8 @@
     }
 
     function dateSegments(now) {
-        const date = now instanceof Date ? now : new Date();
+        if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError('A valid upload date is required.');
+        const date = now;
         return [String(date.getFullYear()), String(date.getMonth() + 1).padStart(2, '0')];
     }
 

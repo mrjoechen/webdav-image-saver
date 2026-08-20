@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const rules = require('../directory-rule.js');
 
 test('exports frozen rules and normalizes rule and folder values', () => {
@@ -51,7 +53,24 @@ test('sanitizeDirectorySegment makes dynamic values safe and non-hierarchical', 
     }
     assert.equal(rules.sanitizeDirectorySegment('', fallback), fallback);
     assert.equal(rules.sanitizeDirectorySegment('café', fallback), 'café');
+    const malformed = rules.sanitizeDirectorySegment('bad\ud800segment', fallback);
+    assert.doesNotThrow(() => encodeURIComponent(malformed));
+    assert.equal(malformed.includes('\uFFFD'), true);
+    const malformedFolder = rules.resolveDirectory({ rule: 'domain', rootFolder: '/Photos', pageUrl: 'https://bad\ud800.example' }).folder;
+    assert.doesNotThrow(() => encodeURIComponent(malformedFolder));
     assert.equal(rules.resolveDirectory({ rule: 'domain', rootFolder: '/Photos', pageUrl: 'https://example.com/a/b' }).folder.split('/').length, 3);
+});
+
+test('rejects an explicitly invalid upload date', () => {
+    assert.throws(() => rules.resolveDirectory({ rule: 'date', rootFolder: '/', pageUrl: 'https://example.com', now: new Date(NaN) }), { name: 'TypeError', message: 'A valid upload date is required.' });
+});
+
+test('UMD module exposes DirectoryRule in a browser-like context', () => {
+    const context = { console };
+    context.globalThis = context;
+    vm.runInNewContext(fs.readFileSync(require.resolve('../directory-rule.js'), 'utf8'), context);
+    assert.deepEqual(Array.from(context.DirectoryRule.DIRECTORY_RULES), ['fixed', 'date', 'domain', 'domain-date']);
+    assert.equal(typeof context.DirectoryRule.resolveDirectory, 'function');
 });
 
 test('date rollover remains local and month padded', () => {
