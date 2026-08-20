@@ -127,6 +127,28 @@ test('maps MIME types and fallback extensions to safe file extensions', () => {
   assert.equal(extensionForMimeType('', 'svg?download=1'), 'bin');
 });
 
+test('uses the actual extension for safe unmapped image MIME types', async () => {
+  assert.equal(extensionForMimeType('image/avif', 'png'), 'avif');
+  assert.equal(extensionForMimeType('image/svg+xml', 'png'), 'svg');
+  assert.equal(extensionForMimeType('application/octet-stream', 'png'), 'png');
+
+  const avifBlob = new Blob(['avif'], { type: 'image/avif' });
+  const avifResult = await prepareImageForUpload({
+    blob: avifBlob,
+    filename: 'photo.png',
+    targetFormat: 'original'
+  });
+  assert.equal(avifResult.filename, 'photo.avif');
+
+  const svgBlob = new Blob(['<svg/>'], { type: 'image/svg+xml' });
+  const svgResult = await prepareImageForUpload({
+    blob: svgBlob,
+    filename: 'logo.png',
+    targetFormat: 'original'
+  });
+  assert.equal(svgResult.filename, 'logo.svg');
+});
+
 test('replaces only the final filename extension', () => {
   assert.equal(replaceFilenameExtension('image.example.png', 'webp'), 'image.example.webp');
   assert.equal(replaceFilenameExtension('image', 'jpg'), 'image.jpg');

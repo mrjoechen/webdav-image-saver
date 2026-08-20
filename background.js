@@ -13,6 +13,7 @@ const processingUploadIds = new Set();
 const contentScriptInjectionPromises = new Map();
 const confirmedWebdavCollections = new Set();
 const webdavDirectoryCreationPromises = new Map();
+let webdavDirectoryCacheGeneration = 0;
 
 // --- Initialization ---
 chrome.runtime.onInstalled.addListener(() => {
@@ -661,7 +662,8 @@ async function ensureWebdavDirectories(serverConfig, folders) {
 
 async function ensureWebdavDirectory(serverConfig, folder) {
     const targetUrl = buildWebdavCollectionUrl(serverConfig.url, folder);
-    const cacheKey = `${serverConfig.username || ''}\n${targetUrl}`;
+    const cacheKey = await webdavDirectoryCacheKey(serverConfig, targetUrl);
+    const cacheGeneration = webdavDirectoryCacheGeneration;
     if (confirmedWebdavCollections.has(cacheKey)) return;
 
     const existingCreation = webdavDirectoryCreationPromises.get(cacheKey);
@@ -679,7 +681,7 @@ async function ensureWebdavDirectory(serverConfig, folder) {
         });
 
         if (response.ok) {
-            confirmedWebdavCollections.add(cacheKey);
+            confirmWebdavDirectory(cacheKey, cacheGeneration);
             return;
         }
 
@@ -700,7 +702,7 @@ async function ensureWebdavDirectory(serverConfig, folder) {
         });
 
         if (verification.ok || verification.status === 207) {
-            confirmedWebdavCollections.add(cacheKey);
+            confirmWebdavDirectory(cacheKey, cacheGeneration);
             return;
         }
         if (verification.status === 404) {
@@ -719,6 +721,39 @@ async function ensureWebdavDirectory(serverConfig, folder) {
     }
 }
 
+function confirmWebdavDirectory(cacheKey, cacheGeneration) {
+    if (cacheGeneration === webdavDirectoryCacheGeneration) {
+        confirmedWebdavCollections.add(cacheKey);
+    }
+}
+
+async function webdavDirectoryCacheKey(serverConfig, targetUrl) {
+    const serverIdentity = getWebdavServerIdentity(serverConfig);
+    const credentialFingerprint = await getWebdavCredentialFingerprint(serverConfig.username, serverConfig.password);
+    return JSON.stringify([serverIdentity, targetUrl, credentialFingerprint]);
+}
+
+function getWebdavServerIdentity(serverConfig) {
+    if (serverConfig.id !== undefined && serverConfig.id !== null && String(serverConfig.id) !== '') {
+        return `id:${serverConfig.id}`;
+    }
+    try {
+        const serverUrl = new URL(serverConfig.url);
+        return `url:${serverUrl.origin}${serverUrl.pathname.replace(/\/+$/, '')}`;
+    } catch (_) {
+        return `url:${String(serverConfig.url || '')}`;
+    }
+}
+
+async function getWebdavCredentialFingerprint(username, password) {
+    if (!globalThis.crypto?.subtle) {
+        throw new Error('Secure WebDAV credential fingerprinting is unavailable.');
+    }
+    const credentialBytes = new TextEncoder().encode(`${username || ''}\u0000${password || ''}`);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', credentialBytes);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function webdavDirectoryError(status, statusText, isVerification = false) {
     if (status === 401) return new Error('Directory creation authentication failed. Check username and password.');
     if (status === 403) return new Error('Directory creation permission denied.');
@@ -730,10 +765,9 @@ function webdavDirectoryError(status, statusText, isVerification = false) {
 }
 
 function resetWebdavDirectoryCache() {
+    webdavDirectoryCacheGeneration += 1;
     confirmedWebdavCollections.clear();
-    if (webdavDirectoryCreationPromises.size === 0) {
-        webdavDirectoryCreationPromises.clear();
-    }
+    webdavDirectoryCreationPromises.clear();
 }
 
 function basicAuthHeader(username, password) {

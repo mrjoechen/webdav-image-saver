@@ -30,8 +30,7 @@
     }
 
     function extensionForMimeType(mimeType, fallbackExtension = 'bin') {
-        const normalizedMimeType = String(mimeType || '').split(';')[0].trim().toLowerCase();
-        return MIME_EXTENSIONS[normalizedMimeType] || sanitizeExtension(fallbackExtension);
+        return safeImageExtensionForMimeType(mimeType) || sanitizeExtension(fallbackExtension);
     }
 
     function replaceFilenameExtension(filename, extension) {
@@ -168,6 +167,15 @@
         return normalizedMimeType === 'image/jpg' ? 'image/jpeg' : normalizedMimeType;
     }
 
+    function safeImageExtensionForMimeType(mimeType) {
+        const normalizedMimeType = canonicalMimeType(mimeType);
+        if (MIME_EXTENSIONS[normalizedMimeType]) return MIME_EXTENSIONS[normalizedMimeType];
+        if (!normalizedMimeType.startsWith('image/')) return '';
+
+        const subtype = normalizedMimeType.slice('image/'.length).split('+')[0];
+        return /^[a-z0-9]{1,10}$/.test(subtype) ? subtype : '';
+    }
+
     function detectImageMimeType(bytes, providedMimeType) {
         if (bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(ascii(bytes, 0, 6))) return 'image/gif';
         if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
@@ -179,7 +187,7 @@
 
     function originalImageResult(blob, filename, mimeType, warningCode = null, warningDetail = '') {
         const resolvedMimeType = mimeType || canonicalMimeType(blob.type) || 'application/octet-stream';
-        const extension = MIME_EXTENSIONS[resolvedMimeType];
+        const extension = safeImageExtensionForMimeType(resolvedMimeType);
         return {
             blob,
             filename: extension ? replaceFilenameExtension(filename, extension) : filename,
