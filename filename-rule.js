@@ -15,12 +15,30 @@
     function validateTemplate(value) {
         const template = String(value == null ? '' : value).trim();
         if (!template) return { valid: false, error: 'Template cannot be empty.' };
-        let match;
-        VARIABLE_PATTERN.lastIndex = 0;
-        while ((match = VARIABLE_PATTERN.exec(template))) {
-            if (!TEMPLATE_VARIABLES.includes(match[1])) {
-                return { valid: false, error: `Unsupported template variable: ${match[1]}.` };
+        let variableStart = -1;
+        for (let index = 0; index < template.length; index += 1) {
+            const character = template[index];
+            if (character === '{') {
+                if (variableStart !== -1) {
+                    return { valid: false, error: 'Template variables cannot be nested.' };
+                }
+                variableStart = index;
+            } else if (character === '}') {
+                if (variableStart === -1) {
+                    return { valid: false, error: 'Template variable braces must be balanced.' };
+                }
+                const variable = template.slice(variableStart + 1, index);
+                if (!variable.trim()) {
+                    return { valid: false, error: 'Template variable cannot be empty.' };
+                }
+                if (!TEMPLATE_VARIABLES.includes(variable)) {
+                    return { valid: false, error: `Unsupported template variable: ${variable}.` };
+                }
+                variableStart = -1;
             }
+        }
+        if (variableStart !== -1) {
+            return { valid: false, error: 'Template variable braces must be balanced.' };
         }
         return { valid: true, error: '' };
     }

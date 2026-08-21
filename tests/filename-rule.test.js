@@ -21,6 +21,23 @@ test('normalizes and validates filename rules/templates', () => {
     assert.deepEqual(rules.validateTemplate('{domain}.{ext}'), { valid: true, error: '' });
 });
 
+test('rejects unbalanced, empty, and nested template variables', () => {
+    const invalidTemplates = [
+        ['photo-{date', 'Template variable braces must be balanced.'],
+        ['photo-date}', 'Template variable braces must be balanced.'],
+        ['photo-{}', 'Template variable cannot be empty.'],
+        ['photo-{   }', 'Template variable cannot be empty.'],
+        ['photo-{{date}}', 'Template variables cannot be nested.'],
+        ['photo-{date{time}}', 'Template variables cannot be nested.']
+    ];
+
+    for (const [template, error] of invalidTemplates) {
+        assert.deepEqual(rules.validateTemplate(template), { valid: false, error }, template);
+    }
+    assert.deepEqual(rules.validateTemplate('photo'), { valid: true, error: '' });
+    assert.deepEqual(rules.validateTemplate('photo-{date}-{time}'), { valid: true, error: '' });
+});
+
 test('extracts safe source names and extensions', () => {
     assert.equal(rules.extractOriginalName('https://x/a/holiday.photo.png?x=1'), 'holiday.photo');
     assert.equal(rules.extractOriginalName('https://x/a/%E2%9C%93%20photo.jpeg'), '✓ photo');

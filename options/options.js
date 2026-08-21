@@ -16,16 +16,26 @@ document.addEventListener('DOMContentLoaded', () => {
     imageFormatValue: document.getElementById('image-format-value'),
     imageFormatOptions: document.getElementById('image-format-options'),
     filenameRule: document.getElementById('filename-rule'),
+    filenameRuleSelect: document.getElementById('filename-rule-select'),
+    filenameRuleTrigger: document.getElementById('filename-rule-trigger'),
+    filenameRuleValue: document.getElementById('filename-rule-value'),
+    filenameRuleOptions: document.getElementById('filename-rule-options'),
     filenameTemplateGroup: document.getElementById('filename-template-group'),
     filenameTemplate: document.getElementById('filename-template'),
     filenameTemplateError: document.getElementById('filename-template-error'),
     filenamePreview: document.getElementById('filename-preview'),
     directoryRule: document.getElementById('directory-rule'),
+    directoryRuleSelect: document.getElementById('directory-rule-select'),
+    directoryRuleTrigger: document.getElementById('directory-rule-trigger'),
+    directoryRuleValue: document.getElementById('directory-rule-value'),
+    directoryRuleOptions: document.getElementById('directory-rule-options'),
+    directoryPreview: document.getElementById('directory-preview'),
     closeSaveSettingsBtn: document.getElementById('close-save-settings-btn'),
     cancelSaveSettingsBtn: document.getElementById('cancel-save-settings-btn'),
     saveSaveSettingsBtn: document.getElementById('save-save-settings-btn'),
     themeToggleBtn: document.getElementById('theme-toggle-btn'),
     themeToggleIcon: document.getElementById('theme-toggle-icon'),
+    languageToggleBtn: document.getElementById('language-toggle-btn'),
     modal: document.getElementById('server-modal'),
     modalTitle: document.getElementById('modal-title'),
     closeModalBtn: document.getElementById('close-modal-btn'),
@@ -62,13 +72,269 @@ document.addEventListener('DOMContentLoaded', () => {
     currentPath: '/',
     selectedPath: '/'
   };
-  const imageFormatOptionElements = [...document.querySelectorAll('.format-select-option')];
-  const imageFormatLabels = {
-    original: 'Original',
-    ask: 'Ask every time',
-    png: 'PNG',
-    jpg: 'JPG',
-    webp: 'WebP'
+  const imageFormatOptionElements = [...document.querySelectorAll('.image-format-option')];
+  const filenameRuleOptionElements = [...document.querySelectorAll('.filename-rule-option')];
+  const directoryRuleOptionElements = [...document.querySelectorAll('.directory-rule-option')];
+  const saveSettingsTabElements = [...document.querySelectorAll('.settings-tab')];
+  const filenameVariableElements = [...document.querySelectorAll('.variable-token')];
+  const saveSettingsPanelElements = ['format', 'filename', 'directory']
+    .map(name => document.getElementById(`settings-panel-${name}`))
+    .filter(Boolean);
+  const imageFormatLabelKeys = {
+    original: 'formatOriginal',
+    ask: 'formatAsk',
+    png: 'png',
+    jpg: 'jpg',
+    webp: 'webp'
+  };
+  const filenameRuleLabelKeys = {
+    automatic: 'filenameAutomatic',
+    original: 'filenameOriginal',
+    custom: 'filenameCustom'
+  };
+  const directoryRuleLabelKeys = {
+    fixed: 'directoryFixed',
+    date: 'directoryDate',
+    domain: 'directoryDomain',
+    'domain-date': 'directoryDomainDate'
+  };
+  const translations = {
+    en: {
+      pageTitle: 'WebDAV Image Saver - Settings',
+      headerSubtitle: 'WebDAV upload settings',
+      saveSettings: 'Save settings',
+      saveSettingsSections: 'Save settings sections',
+      supportKoFiLabel: 'Support this project on Ko-fi',
+      supportKoFiTitle: 'Support on Ko-fi',
+      githubLabel: 'Open GitHub repository',
+      noServers: 'No servers yet',
+      noServersHelp: 'Add a WebDAV endpoint for right-click image saving.',
+      add: 'Add',
+      servers: 'Servers',
+      addServer: 'Add Server',
+      editServer: 'Edit Server',
+      close: 'Close',
+      name: 'Name',
+      personalCloud: 'Personal cloud',
+      serverUrl: 'Server URL',
+      username: 'Username',
+      usernamePlaceholder: 'Your username',
+      password: 'Password',
+      passwordPlaceholder: 'Your password',
+      testConnection: 'Test',
+      targetFolder: 'Target folder',
+      browseFolders: 'Browse folders',
+      targetFolderHelp: 'Images are saved to this WebDAV folder.',
+      cancel: 'Cancel',
+      save: 'Save',
+      closeSaveSettings: 'Close save settings',
+      imageFormat: 'Image format',
+      saveImagesAs: 'Save images as',
+      formatOriginal: 'Original',
+      formatAsk: 'Ask every time',
+      png: 'PNG',
+      jpg: 'JPG',
+      webp: 'WebP',
+      formatHelp: 'Animated or unsupported images are saved in their original format with a warning.',
+      fileNamingRule: 'File naming rule',
+      filenameAutomatic: 'Automatic',
+      filenameOriginal: 'Original filename',
+      filenameCustom: 'Custom template',
+      filenameRuleHelp: 'Choose a safe default, keep the original file name, or build a descriptive template.',
+      filenameTemplate: 'Filename template',
+      filenameTemplateHelp: 'Type a template or insert variables below.',
+      preview: 'Preview',
+      variables: 'Variables — click to insert',
+      insertVariable: 'Insert {variable}',
+      saveDirectoryRule: 'Save directory rule',
+      directoryFixed: 'Fixed directory',
+      directoryDate: 'By date',
+      directoryDomain: 'By website',
+      directoryDomainDate: 'By website and date',
+      directoryRuleHelp: 'Rules are relative to the target folder configured on the selected WebDAV server. /Images is only an example, never a fixed path.',
+      pathPreview: 'Path preview',
+      chooseFolder: 'Choose Folder',
+      closeFolderPicker: 'Close folder picker',
+      parentFolder: 'Parent folder',
+      refreshFolders: 'Refresh folders',
+      refresh: 'Refresh',
+      select: 'Select',
+      switchLanguage: 'Switch language',
+      switchToChinese: 'Switch to Chinese',
+      switchToEnglish: 'Switch to English',
+      switchToLight: 'Switch to light mode',
+      switchToDark: 'Switch to dark mode',
+      lightMode: 'Light mode',
+      darkMode: 'Dark mode',
+      loadingSaveSettings: 'Loading Save settings',
+      retryLoadingSaveSettings: 'Retry loading Save settings',
+      couldNotLoadSaveSettings: 'Could not load Save settings.',
+      filenameTemplateEmpty: 'Filename template cannot be empty.',
+      filenameTemplateUnbalanced: 'Template variable braces must be balanced.',
+      filenameTemplateEmptyVariable: 'Template variable cannot be empty.',
+      filenameTemplateNested: 'Template variables cannot be nested.',
+      filenamePreviewUnavailable: 'Fix the template to see a preview.',
+      filenameTemplateInvalid: 'Filename template is not valid.',
+      unsupportedTemplateVariable: 'Unsupported template variable: {variable}.',
+      saveSettingsSaved: 'Save settings saved.',
+      savedReloadApply: 'Saved. Reload the extension to apply it.',
+      couldNotSaveSaveSettings: 'Could not save Save settings.',
+      saving: 'Saving',
+      saved: 'Saved',
+      savedReloadMenu: 'Saved. Reload the extension to update the menu.',
+      couldNotSaveSettings: 'Could not save settings.',
+      requiredServerFields: 'Name, URL, and username are required.',
+      invalidServerUrl: 'URL must start with http:// or https://',
+      testingRequiresCredentials: 'URL and Username are required for testing.',
+      testing: 'Testing',
+      testingConnection: 'Testing connection...',
+      connectionReady: 'Connection ready.',
+      connectionFailed: 'Connection failed: {error}',
+      unknownError: 'Unknown error',
+      authenticationFailed: 'Authentication failed. Check username and password.',
+      folderNotFound: 'Folder not found. Check the WebDAV URL or folder path.',
+      networkRequestFailed: 'Network request failed.',
+      unknownConnectionError: 'Unknown connection error',
+      serverError: 'Server error: {error}',
+      errorMessage: 'Error: {error}',
+      backgroundUnavailable: 'Could not contact background script.',
+      urlUsernameRequired: 'URL and username are required.',
+      couldNotListFolders: 'Could not list folders.',
+      folderListError: 'Could not list folders: {error}',
+      noFolders: 'No folders here',
+      loadingFolders: 'Loading folders',
+      couldNotLoadServers: 'Could not load server configurations.',
+      userLabel: 'User:',
+      folderLabel: 'Folder:',
+      editServerLabel: 'Edit {name}',
+      edit: 'Edit',
+      deleteServerLabel: 'Delete {name}',
+      delete: 'Delete',
+      serverNotFound: 'Server not found.',
+      couldNotLoadServer: 'Could not load server.',
+      deleteConfirm: 'Delete "{name}"?',
+      deleted: 'Deleted',
+      deletedReloadMenu: 'Deleted. Reload the extension to update the menu.',
+      couldNotDeleteServer: 'Could not delete server.'
+    },
+    zh: {
+      pageTitle: 'WebDAV Image Saver - 设置',
+      headerSubtitle: 'WebDAV 上传设置',
+      saveSettings: '保存设置',
+      saveSettingsSections: '保存设置分类',
+      supportKoFiLabel: '在 Ko-fi 上支持此项目',
+      supportKoFiTitle: '支持项目',
+      githubLabel: '打开 GitHub 仓库',
+      noServers: '暂无服务器',
+      noServersHelp: '添加 WebDAV 端点，以便右键保存图片。',
+      add: '添加',
+      servers: '服务器',
+      addServer: '添加服务器',
+      editServer: '编辑服务器',
+      close: '关闭',
+      name: '名称',
+      personalCloud: '个人云盘',
+      serverUrl: '服务器 URL',
+      username: '用户名',
+      usernamePlaceholder: '请输入用户名',
+      password: '密码',
+      passwordPlaceholder: '请输入密码',
+      testConnection: '测试连接',
+      targetFolder: '目标文件夹',
+      browseFolders: '浏览文件夹',
+      targetFolderHelp: '图片将保存到此 WebDAV 文件夹。',
+      cancel: '取消',
+      save: '保存',
+      closeSaveSettings: '关闭保存设置',
+      imageFormat: '图片格式',
+      saveImagesAs: '图片保存为',
+      formatOriginal: '原格式',
+      formatAsk: '每次询问',
+      png: 'PNG',
+      jpg: 'JPG',
+      webp: 'WebP',
+      formatHelp: '动画图片或不支持的图片会以原格式保存，并显示警告。',
+      fileNamingRule: '文件命名规则',
+      filenameAutomatic: '自动',
+      filenameOriginal: '原文件名',
+      filenameCustom: '自定义模板',
+      filenameRuleHelp: '选择安全的默认规则、保留原文件名，或创建描述性模板。',
+      filenameTemplate: '文件名模板',
+      filenameTemplateHelp: '输入模板，或插入下方变量。',
+      preview: '预览',
+      variables: '变量 — 点击插入',
+      insertVariable: '插入 {variable}',
+      saveDirectoryRule: '保存目录规则',
+      directoryFixed: '固定目录',
+      directoryDate: '按日期',
+      directoryDomain: '按网站',
+      directoryDomainDate: '按网站和日期',
+      directoryRuleHelp: '规则相对于所选 WebDAV 服务器配置的目标文件夹。/Images 仅为示例，不是固定路径。',
+      pathPreview: '路径预览',
+      chooseFolder: '选择文件夹',
+      closeFolderPicker: '关闭文件夹选择器',
+      parentFolder: '上级文件夹',
+      refreshFolders: '刷新文件夹',
+      refresh: '刷新',
+      select: '选择',
+      switchLanguage: '中英文切换',
+      switchToChinese: '切换到中文',
+      switchToEnglish: '切换到英文',
+      switchToLight: '切换到浅色模式',
+      switchToDark: '切换到深色模式',
+      lightMode: '浅色模式',
+      darkMode: '深色模式',
+      loadingSaveSettings: '正在加载保存设置',
+      retryLoadingSaveSettings: '重试加载保存设置',
+      couldNotLoadSaveSettings: '无法加载保存设置。',
+      filenameTemplateEmpty: '文件名模板不能为空。',
+      filenameTemplateUnbalanced: '模板变量的花括号必须成对。',
+      filenameTemplateEmptyVariable: '模板变量不能为空。',
+      filenameTemplateNested: '模板变量不能嵌套。',
+      filenamePreviewUnavailable: '请修正规则后查看预览。',
+      filenameTemplateInvalid: '文件名模板规则不正确。',
+      unsupportedTemplateVariable: '不支持的模板变量：{variable}。',
+      saveSettingsSaved: '保存设置已保存。',
+      savedReloadApply: '已保存。请重新加载扩展以应用更改。',
+      couldNotSaveSaveSettings: '无法保存保存设置。',
+      saving: '正在保存',
+      saved: '已保存',
+      savedReloadMenu: '已保存。请重新加载扩展以更新菜单。',
+      couldNotSaveSettings: '无法保存设置。',
+      requiredServerFields: '名称、URL 和用户名为必填项。',
+      invalidServerUrl: 'URL 必须以 http:// 或 https:// 开头',
+      testingRequiresCredentials: '测试需要填写 URL 和用户名。',
+      testing: '正在测试',
+      testingConnection: '正在测试连接……',
+      connectionReady: '连接成功，可以使用。',
+      connectionFailed: '连接失败：{error}',
+      unknownError: '未知错误',
+      authenticationFailed: '身份验证失败，请检查用户名和密码。',
+      folderNotFound: '未找到文件夹，请检查 WebDAV URL 或文件夹路径。',
+      networkRequestFailed: '网络请求失败。',
+      unknownConnectionError: '未知连接错误',
+      serverError: '服务器错误：{error}',
+      errorMessage: '错误：{error}',
+      backgroundUnavailable: '无法联系后台脚本。',
+      urlUsernameRequired: 'URL 和用户名为必填项。',
+      couldNotListFolders: '无法列出文件夹。',
+      folderListError: '无法列出文件夹：{error}',
+      noFolders: '此处没有文件夹',
+      loadingFolders: '正在加载文件夹',
+      couldNotLoadServers: '无法加载服务器配置。',
+      userLabel: '用户：',
+      folderLabel: '文件夹：',
+      editServerLabel: '编辑 {name}',
+      edit: '编辑',
+      deleteServerLabel: '删除 {name}',
+      delete: '删除',
+      serverNotFound: '未找到服务器。',
+      couldNotLoadServer: '无法加载服务器。',
+      deleteConfirm: '确定删除“{name}”吗？',
+      deleted: '已删除',
+      deletedReloadMenu: '已删除。请重新加载扩展以更新菜单。',
+      couldNotDeleteServer: '无法删除服务器。'
+    }
   };
   const currentSettingsSchemaVersion = Number.isInteger(AppSettings.SETTINGS_SCHEMA_VERSION)
     ? AppSettings.SETTINGS_SCHEMA_VERSION
@@ -87,15 +353,24 @@ document.addEventListener('DOMContentLoaded', () => {
   let saveSettingsRevision = 0;
   let isSaving = false;
   let saveSettingsOpener = null;
+  let saveSettingsLoadFailed = false;
+  let activeSaveSettingsTab = 'format';
+  let currentLanguage = localStorage.getItem('language') === 'zh' ? 'zh' : 'en';
+  let renderedServers = [];
+  let connectionStatusState = null;
+  let folderPickerViewState = null;
+  let notificationState = null;
   const dirtySaveSettingsFields = new Set();
 
   // Initialize the app
   init();
 
   async function init() {
+    initializeSaveSettingsTabs();
+    applyLanguage(currentLanguage);
     initTheme();
     attachEventListeners();
-    setSaveSettingsButtonState({ disabled: true, title: 'Loading Save settings' });
+    setSaveSettingsButtonState({ disabled: true, title: t('loadingSaveSettings') });
     await Promise.all([loadServers(), loadSaveSettings()]);
   }
 
@@ -111,16 +386,35 @@ document.addEventListener('DOMContentLoaded', () => {
       option.addEventListener('click', () => selectImageFormat(option.dataset.value));
       option.addEventListener('keydown', event => handleImageFormatOptionKeydown(event, index));
     });
+    elements.filenameRuleTrigger?.addEventListener('click', () => toggleRuleSelect('filename'));
+    elements.filenameRuleTrigger?.addEventListener('keydown', event => handleRuleTriggerKeydown('filename', event));
+    filenameRuleOptionElements.forEach((option, index) => {
+      option.addEventListener('click', () => selectRuleValue('filename', option.dataset.value));
+      option.addEventListener('keydown', event => handleRuleOptionKeydown('filename', event, index));
+    });
+    elements.directoryRuleTrigger?.addEventListener('click', () => toggleRuleSelect('directory'));
+    elements.directoryRuleTrigger?.addEventListener('keydown', event => handleRuleTriggerKeydown('directory', event));
+    directoryRuleOptionElements.forEach((option, index) => {
+      option.addEventListener('click', () => selectRuleValue('directory', option.dataset.value));
+      option.addEventListener('keydown', event => handleRuleOptionKeydown('directory', event, index));
+    });
+    saveSettingsTabElements.forEach((tab, index) => {
+      tab.addEventListener('click', () => activateSaveSettingsTab(getSaveSettingsTabName(tab), { focus: true }));
+      tab.addEventListener('keydown', event => handleSaveSettingsTabKeydown(event, index));
+    });
+    filenameVariableElements.forEach(token => {
+      token.addEventListener('click', () => insertFilenameVariable(token.dataset.variable));
+    });
     elements.filenameRule?.addEventListener('change', () => {
       dirtySaveSettingsFields.add('filename.rule');
+      setRuleSelectValue('filename', elements.filenameRule?.value);
       updateFilenameRuleEditor();
     });
-    elements.filenameTemplate?.addEventListener('input', () => {
-      dirtySaveSettingsFields.add('filename.customTemplate');
-      updateFilenameRuleEditor();
-    });
+    elements.filenameTemplate?.addEventListener('input', handleFilenameTemplateInput);
     elements.directoryRule?.addEventListener('change', () => {
       dirtySaveSettingsFields.add('directory.rule');
+      setRuleSelectValue('directory', elements.directoryRule?.value);
+      updateDirectoryPreview();
     });
     elements.closeSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
     elements.cancelSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
@@ -128,6 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (event.target === elements.saveSettingsModal) closeSaveSettingsModal();
     });
     elements.themeToggleBtn?.addEventListener('click', toggleTheme);
+    elements.languageToggleBtn?.addEventListener('click', toggleLanguage);
     elements.closeModalBtn?.addEventListener('click', () => closeModal());
     elements.cancelBtn?.addEventListener('click', () => closeModal());
     
@@ -148,6 +443,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isImageFormatSelectOpen() && !elements.imageFormatSelect?.contains(event.target)) {
         closeImageFormatSelect();
       }
+      if (isRuleSelectOpen('filename') && !elements.filenameRuleSelect?.contains(event.target)) {
+        closeRuleSelect('filename');
+      }
+      if (isRuleSelectOpen('directory') && !elements.directoryRuleSelect?.contains(event.target)) {
+        closeRuleSelect('directory');
+      }
     });
 
 
@@ -155,9 +456,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
       const saveSettingsVisible = !elements.saveSettingsModal?.classList.contains('hidden');
       if (saveSettingsVisible) {
-        if (e.key === 'Escape' && isImageFormatSelectOpen()) {
+        if (e.key === 'Escape' && isAnySaveSettingsSelectOpen()) {
           e.preventDefault();
-          closeImageFormatSelect({ restoreFocus: true });
+          closeOpenSaveSettingsSelect({ restoreFocus: true });
           return;
         }
         if (isSaving) {
@@ -176,14 +477,124 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (e.key !== 'Escape') return;
 
-      if (isImageFormatSelectOpen()) {
-        closeImageFormatSelect({ restoreFocus: true });
+      if (isAnySaveSettingsSelectOpen()) {
+        closeOpenSaveSettingsSelect({ restoreFocus: true });
       } else if (!elements.folderPickerModal?.classList.contains('hidden')) {
         closeFolderPicker();
       } else if (!elements.modal?.classList.contains('hidden')) {
         closeModal();
       }
     });
+  }
+
+  function t(key, replacements = {}) {
+    const template = translations[currentLanguage]?.[key] ?? translations.en[key] ?? key;
+    return String(template).replace(/\{([a-zA-Z]+)\}/g, (match, name) =>
+      Object.prototype.hasOwnProperty.call(replacements, name) ? String(replacements[name]) : match
+    );
+  }
+
+  function localizedMessage(key, replacements = {}) {
+    return { key, replacements };
+  }
+
+  function resolveLocalizedMessage(message) {
+    if (!message || typeof message !== 'object' || typeof message.key !== 'string') {
+      return String(message ?? '');
+    }
+    const replacements = Object.fromEntries(
+      Object.entries(message.replacements || {}).map(([name, value]) => [name, resolveLocalizedMessage(value)])
+    );
+    return t(message.key, replacements);
+  }
+
+  function localizeWebdavError(message) {
+    const error = String(message || '').trim();
+    const knownErrors = {
+      'Authentication failed. Check username and password.': 'authenticationFailed',
+      'Folder not found. Check the WebDAV URL or folder path.': 'folderNotFound',
+      'Failed to fetch': 'networkRequestFailed',
+      'NetworkError when attempting to fetch resource.': 'networkRequestFailed',
+      'Unknown connection error': 'unknownConnectionError'
+    };
+    if (knownErrors[error]) return localizedMessage(knownErrors[error]);
+    const serverError = /^Server error:\s*(.+)$/s.exec(error);
+    if (serverError) return localizedMessage('serverError', { error: serverError[1] });
+    return error;
+  }
+
+  function applyLanguage(language) {
+    currentLanguage = language === 'zh' ? 'zh' : 'en';
+    document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
+    document.documentElement.dataset.language = currentLanguage;
+    document.title = t('pageTitle');
+
+    document.querySelectorAll('[data-i18n]').forEach(element => {
+      const value = translations[currentLanguage]?.[element.dataset.i18n];
+      if (value !== undefined) element.textContent = value;
+    });
+    applyTranslatedAttribute('placeholder');
+    applyTranslatedAttribute('aria-label');
+    applyTranslatedAttribute('title');
+
+    if (elements.languageToggleBtn) {
+      elements.languageToggleBtn.setAttribute(
+        'aria-label',
+        t(currentLanguage === 'zh' ? 'switchToEnglish' : 'switchToChinese')
+      );
+      elements.languageToggleBtn.setAttribute('title', t('switchLanguage'));
+    }
+    filenameVariableElements.forEach(token => {
+      const variable = `{${token.dataset.variable || ''}}`;
+      token.setAttribute('aria-label', t('insertVariable', { variable }));
+      token.setAttribute('title', t('insertVariable', { variable }));
+    });
+
+    setImageFormatControl(elements.imageFormatPreference?.value || 'original');
+    setRuleSelectValue('filename', elements.filenameRule?.value || 'automatic');
+    setRuleSelectValue('directory', elements.directoryRule?.value || 'fixed');
+    updateThemeToggle(getCurrentTheme());
+    refreshSaveSettingsButtonCopy();
+    if (elements.filenameTemplate?.getAttribute('aria-invalid') === 'true') updateFilenameRuleEditor();
+    if (!elements.modal?.classList.contains('hidden')) updateServerModalTitle();
+    if (renderedServers.length > 0) renderServerList(renderedServers);
+    renderConnectionStatusState();
+    rerenderFolderPickerView();
+    if (!elements.notification?.classList.contains('hidden')) renderNotificationState();
+  }
+
+  function applyTranslatedAttribute(attribute) {
+    document.querySelectorAll(`[data-i18n-${attribute}]`).forEach(element => {
+      const key = element.getAttribute(`data-i18n-${attribute}`);
+      if (key && translations[currentLanguage]?.[key] !== undefined) {
+        element.setAttribute(attribute, t(key));
+      }
+    });
+  }
+
+  function toggleLanguage() {
+    const nextLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+    localStorage.setItem('language', nextLanguage);
+    applyLanguage(nextLanguage);
+  }
+
+  function getCurrentTheme() {
+    return document.documentElement.dataset.theme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }
+
+  function refreshSaveSettingsButtonCopy() {
+    if (saveSettingsLoading) {
+      setSaveSettingsButtonState({ disabled: true, title: t('loadingSaveSettings') });
+    } else if (saveSettingsLoadFailed) {
+      setSaveSettingsButtonState({
+        disabled: false,
+        title: t('retryLoadingSaveSettings'),
+        label: t('retryLoadingSaveSettings')
+      });
+    } else {
+      setSaveSettingsButtonState({ disabled: !saveSettingsReady, title: t('saveSettings') });
+    }
   }
 
   function initTheme() {
@@ -199,8 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function toggleTheme() {
-    const currentTheme = document.documentElement.dataset.theme ||
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const currentTheme = getCurrentTheme();
     const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
     document.documentElement.dataset.theme = nextTheme;
@@ -213,8 +623,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isDark = theme === 'dark';
     elements.themeToggleIcon.querySelector('use')?.setAttribute('href', isDark ? '#icon-sun' : '#icon-moon');
-    elements.themeToggleBtn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
-    elements.themeToggleBtn.setAttribute('title', isDark ? 'Light mode' : 'Dark mode');
+    elements.themeToggleBtn.setAttribute('aria-label', isDark ? t('switchToLight') : t('switchToDark'));
+    elements.themeToggleBtn.setAttribute('title', isDark ? t('lightMode') : t('darkMode'));
   }
 
   function copySaveSettings(settings) {
@@ -258,17 +668,77 @@ document.addEventListener('DOMContentLoaded', () => {
     if (label) elements.saveSettingsBtn.setAttribute('aria-label', label);
   }
 
+  function getSaveSettingsTabName(tab) {
+    return tab?.dataset.settingsTab || String(tab?.id || '').replace('settings-tab-', '');
+  }
+
+  function initializeSaveSettingsTabs() {
+    saveSettingsTabElements.forEach(tab => {
+      const name = getSaveSettingsTabName(tab);
+      const panel = document.getElementById(`settings-panel-${name}`);
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', `settings-panel-${name}`);
+      panel?.setAttribute('role', 'tabpanel');
+      panel?.setAttribute('aria-labelledby', tab.id);
+    });
+    activateSaveSettingsTab(activeSaveSettingsTab);
+  }
+
+  function activateSaveSettingsTab(name, { focus = false } = {}) {
+    if (isSaving) return;
+    const target = saveSettingsTabElements.find(tab => getSaveSettingsTabName(tab) === name) || saveSettingsTabElements[0];
+    if (!target) return;
+    activeSaveSettingsTab = getSaveSettingsTabName(target);
+    if (activeSaveSettingsTab !== 'format') closeImageFormatSelect();
+    if (activeSaveSettingsTab !== 'filename') closeRuleSelect('filename');
+    if (activeSaveSettingsTab !== 'directory') closeRuleSelect('directory');
+
+    saveSettingsTabElements.forEach(tab => {
+      const selected = tab === target;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.setAttribute('tabindex', selected ? '0' : '-1');
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    saveSettingsPanelElements.forEach(panel => {
+      const selected = panel.id === `settings-panel-${activeSaveSettingsTab}`;
+      panel.toggleAttribute('hidden', !selected);
+      panel.setAttribute('aria-hidden', String(!selected));
+    });
+    if (focus) target.focus();
+  }
+
+  function handleSaveSettingsTabKeydown(event, index) {
+    if (isSaving || saveSettingsTabElements.length === 0) return;
+    let targetIndex = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      targetIndex = (index + 1) % saveSettingsTabElements.length;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      targetIndex = (index - 1 + saveSettingsTabElements.length) % saveSettingsTabElements.length;
+    } else if (event.key === 'Home') {
+      targetIndex = 0;
+    } else if (event.key === 'End') {
+      targetIndex = saveSettingsTabElements.length - 1;
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      targetIndex = index;
+    }
+    if (targetIndex === null) return;
+    event.preventDefault();
+    activateSaveSettingsTab(getSaveSettingsTabName(saveSettingsTabElements[targetIndex]), { focus: true });
+  }
+
   async function loadSaveSettings({ openWhenReady = false, opener = null } = {}) {
     const loadRevision = ++saveSettingsRevision;
     saveSettingsLoading = true;
-    setSaveSettingsButtonState({ disabled: true, title: 'Loading Save settings' });
+    saveSettingsLoadFailed = false;
+    setSaveSettingsButtonState({ disabled: true, title: t('loadingSaveSettings') });
     try {
       const settings = await AppSettings.loadSettings(chrome.storage.local);
       if (loadRevision !== saveSettingsRevision) return false;
       persistedSaveSettings = copySaveSettings(settings);
       saveSettingsReady = true;
       saveSettingsLoading = false;
-      setSaveSettingsButtonState({ disabled: false, title: 'Save settings' });
+      saveSettingsLoadFailed = false;
+      setSaveSettingsButtonState({ disabled: false, title: t('saveSettings') });
       restoreSaveSettingsControls();
       if (openWhenReady) openSaveSettingsModal({ opener });
       return true;
@@ -276,13 +746,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (loadRevision !== saveSettingsRevision) return false;
       saveSettingsReady = false;
       saveSettingsLoading = false;
+      saveSettingsLoadFailed = true;
       setSaveSettingsButtonState({
         disabled: false,
-        title: 'Retry loading Save settings',
-        label: 'Retry loading Save settings'
+        title: t('retryLoadingSaveSettings'),
+        label: t('retryLoadingSaveSettings')
       });
       console.error('Error loading save settings:', error);
-      showNotification('Could not load Save settings.', 'error');
+      showNotification(localizedMessage('couldNotLoadSaveSettings'), 'error');
       return false;
     }
   }
@@ -295,13 +766,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     saveSettingsOpener = opener || elements.saveSettingsBtn;
     restoreSaveSettingsControls();
+    activateSaveSettingsTab(activeSaveSettingsTab);
     elements.saveSettingsModal?.classList.remove('hidden');
-    elements.imageFormatTrigger?.focus();
+    saveSettingsTabElements
+      .find(tab => getSaveSettingsTabName(tab) === activeSaveSettingsTab)
+      ?.focus();
   }
 
   function closeSaveSettingsModal() {
     if (isSaving) return;
-    closeImageFormatSelect();
+    closeOpenSaveSettingsSelect();
     elements.saveSettingsModal?.classList.add('hidden');
     restoreSaveSettingsControls();
     const opener = saveSettingsOpener || elements.saveSettingsBtn;
@@ -312,9 +786,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function getSaveSettingsFocusableElements() {
     const candidates = [...(elements.saveSettingsModal?.querySelectorAll('button, input, select, [tabindex]') || [])];
     return candidates.filter(control => {
-      if (control.disabled || control === elements.imageFormatPreference) return false;
+      if (control.disabled ||
+        control === elements.imageFormatPreference ||
+        control === elements.filenameRule ||
+        control === elements.directoryRule) return false;
       if (elements.filenameTemplateGroup?.hasAttribute('hidden') && elements.filenameTemplateGroup.contains(control)) return false;
       if (elements.imageFormatOptions?.classList.contains('hidden') && elements.imageFormatOptions.contains(control)) return false;
+      if (elements.filenameRuleOptions?.classList.contains('hidden') && elements.filenameRuleOptions.contains(control)) return false;
+      if (elements.directoryRuleOptions?.classList.contains('hidden') && elements.directoryRuleOptions.contains(control)) return false;
+      if (saveSettingsPanelElements.some(panel => panel.hasAttribute('hidden') && panel.contains(control))) return false;
       return true;
     });
   }
@@ -339,15 +819,21 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.cancelSaveSettingsBtn,
       elements.closeSaveSettingsBtn,
       elements.imageFormatTrigger,
+      elements.filenameRuleTrigger,
+      elements.directoryRuleTrigger,
       elements.filenameRule,
       elements.filenameTemplate,
       elements.directoryRule,
-      ...imageFormatOptionElements
+      ...imageFormatOptionElements,
+      ...filenameRuleOptionElements,
+      ...directoryRuleOptionElements,
+      ...saveSettingsTabElements,
+      ...filenameVariableElements
     ];
     elements.saveSettingsDialog?.setAttribute('aria-busy', String(saving));
     elements.saveSettingsModal?.setAttribute('aria-busy', String(saving));
     elements.saveSettingsForm?.setAttribute('aria-busy', String(saving));
-    if (saving) closeImageFormatSelect();
+    if (saving) closeOpenSaveSettingsSelect();
     controls.forEach(control => {
       if (control) control.disabled = saving;
     });
@@ -358,21 +844,22 @@ document.addEventListener('DOMContentLoaded', () => {
     dirtySaveSettingsFields.clear();
     setImageFormatControl(persistedSaveSettings.image.saveFormat);
     if (elements.filenameRule) {
-      elements.filenameRule.value = FilenameRule.normalizeFilenameRule(persistedSaveSettings.filename.rule);
+      setRuleSelectValue('filename', persistedSaveSettings.filename.rule);
     }
     if (elements.filenameTemplate) {
       elements.filenameTemplate.value = String(persistedSaveSettings.filename.customTemplate ?? '');
     }
     if (elements.directoryRule) {
-      elements.directoryRule.value = DirectoryRule.normalizeDirectoryRule(persistedSaveSettings.directory.rule);
+      setRuleSelectValue('directory', persistedSaveSettings.directory.rule);
     }
     updateFilenameRuleEditor();
+    updateDirectoryPreview();
   }
 
   function setImageFormatControl(value) {
     const normalizedValue = ImageFormat.normalizeFormatPreference(value);
     if (elements.imageFormatPreference) elements.imageFormatPreference.value = normalizedValue;
-    if (elements.imageFormatValue) elements.imageFormatValue.textContent = imageFormatLabels[normalizedValue];
+    if (elements.imageFormatValue) elements.imageFormatValue.textContent = t(imageFormatLabelKeys[normalizedValue]);
 
     imageFormatOptionElements.forEach(option => {
       const isSelected = option.dataset.value === normalizedValue;
@@ -381,11 +868,153 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function getRuleSelectConfig(name) {
+    if (name === 'filename') {
+      return {
+        input: elements.filenameRule,
+        select: elements.filenameRuleSelect,
+        trigger: elements.filenameRuleTrigger,
+        valueElement: elements.filenameRuleValue,
+        optionsElement: elements.filenameRuleOptions,
+        optionElements: filenameRuleOptionElements,
+        labelKeys: filenameRuleLabelKeys,
+        normalize: FilenameRule.normalizeFilenameRule,
+        dirtyField: 'filename.rule',
+        afterSelect: updateFilenameRuleEditor
+      };
+    }
+    if (name === 'directory') {
+      return {
+        input: elements.directoryRule,
+        select: elements.directoryRuleSelect,
+        trigger: elements.directoryRuleTrigger,
+        valueElement: elements.directoryRuleValue,
+        optionsElement: elements.directoryRuleOptions,
+        optionElements: directoryRuleOptionElements,
+        labelKeys: directoryRuleLabelKeys,
+        normalize: DirectoryRule.normalizeDirectoryRule,
+        dirtyField: 'directory.rule',
+        afterSelect: updateDirectoryPreview
+      };
+    }
+    return null;
+  }
+
+  function setRuleSelectValue(name, value) {
+    const config = getRuleSelectConfig(name);
+    if (!config) return '';
+    const normalizedValue = config.normalize(value);
+    if (config.input) config.input.value = normalizedValue;
+    if (config.valueElement) config.valueElement.textContent = t(config.labelKeys[normalizedValue]);
+
+    config.optionElements.forEach(option => {
+      const isSelected = option.dataset.value === normalizedValue;
+      option.setAttribute('aria-selected', String(isSelected));
+      option.classList.toggle('selected', isSelected);
+    });
+    return normalizedValue;
+  }
+
+  function isRuleSelectOpen(name) {
+    return getRuleSelectConfig(name)?.trigger?.getAttribute('aria-expanded') === 'true';
+  }
+
+  function isAnySaveSettingsSelectOpen() {
+    return isImageFormatSelectOpen() || isRuleSelectOpen('filename') || isRuleSelectOpen('directory');
+  }
+
+  function closeOpenSaveSettingsSelect({ restoreFocus = false } = {}) {
+    if (isImageFormatSelectOpen()) closeImageFormatSelect({ restoreFocus });
+    if (isRuleSelectOpen('filename')) closeRuleSelect('filename', { restoreFocus });
+    if (isRuleSelectOpen('directory')) closeRuleSelect('directory', { restoreFocus });
+  }
+
+  function openRuleSelect(name, { focusSelected = false } = {}) {
+    const config = getRuleSelectConfig(name);
+    if (!config || !config.select || !config.optionsElement || !config.trigger) return;
+    closeImageFormatSelect();
+    if (name !== 'filename') closeRuleSelect('filename');
+    if (name !== 'directory') closeRuleSelect('directory');
+
+    config.select.classList.add('is-open');
+    config.optionsElement.classList.remove('hidden');
+    config.trigger.setAttribute('aria-expanded', 'true');
+
+    if (focusSelected) {
+      const selectedOption = config.optionElements.find(option => option.getAttribute('aria-selected') === 'true');
+      (selectedOption || config.optionElements[0])?.focus();
+    }
+  }
+
+  function closeRuleSelect(name, { restoreFocus = false } = {}) {
+    const config = getRuleSelectConfig(name);
+    if (!config) return;
+    config.select?.classList.remove('is-open');
+    config.optionsElement?.classList.add('hidden');
+    config.trigger?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) config.trigger?.focus();
+  }
+
+  function toggleRuleSelect(name) {
+    if (isSaving) return;
+    if (isRuleSelectOpen(name)) {
+      closeRuleSelect(name);
+    } else {
+      openRuleSelect(name);
+    }
+  }
+
+  function selectRuleValue(name, value) {
+    const config = getRuleSelectConfig(name);
+    if (isSaving || !config) return;
+    dirtySaveSettingsFields.add(config.dirtyField);
+    setRuleSelectValue(name, value);
+    closeRuleSelect(name, { restoreFocus: true });
+    config.afterSelect();
+  }
+
+  function handleRuleTriggerKeydown(name, event) {
+    if (isSaving) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      openRuleSelect(name, { focusSelected: true });
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleRuleSelect(name);
+    }
+  }
+
+  function handleRuleOptionKeydown(name, event, index) {
+    if (isSaving) return;
+    const config = getRuleSelectConfig(name);
+    if (!config) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const offset = event.key === 'ArrowDown' ? 1 : -1;
+      config.optionElements[(index + offset + config.optionElements.length) % config.optionElements.length]?.focus();
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const targetIndex = event.key === 'Home' ? 0 : config.optionElements.length - 1;
+      config.optionElements[targetIndex]?.focus();
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectRuleValue(name, config.optionElements[index]?.dataset.value);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeRuleSelect(name, { restoreFocus: true });
+    } else if (event.key === 'Tab') {
+      closeRuleSelect(name);
+    }
+  }
+
   function isImageFormatSelectOpen() {
     return elements.imageFormatTrigger?.getAttribute('aria-expanded') === 'true';
   }
 
   function openImageFormatSelect({ focusSelected = false } = {}) {
+    closeRuleSelect('filename');
+    closeRuleSelect('directory');
     elements.imageFormatSelect?.classList.add('is-open');
     elements.imageFormatOptions?.classList.remove('hidden');
     elements.imageFormatTrigger?.setAttribute('aria-expanded', 'true');
@@ -456,8 +1085,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const filenameRule = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value);
     const isCustom = filenameRule === 'custom';
     elements.filenameTemplateGroup?.toggleAttribute('hidden', !isCustom);
+    elements.filenameTemplateGroup?.classList.toggle('hidden', !isCustom);
     const template = elements.filenameTemplate?.value || '';
-    const validation = FilenameRule.validateTemplate(template.trim());
+    const validation = localizeFilenameValidation(FilenameRule.validateTemplate(template.trim()));
     const filenameControlsUntouched = !dirtySaveSettingsFields.has('filename.rule') &&
       !dirtySaveSettingsFields.has('filename.customTemplate');
     const preservesFutureFilenameValues = persistedSaveSettings.schemaVersion > currentSettingsSchemaVersion &&
@@ -473,17 +1103,64 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.filenameTemplate.setAttribute('aria-invalid', String(invalid));
       elements.filenameTemplate.classList.toggle('is-invalid', invalid);
     }
+    elements.filenameTemplateGroup?.classList.toggle('has-error', invalid);
     if (elements.filenameTemplateError) {
       elements.filenameTemplateError.textContent = invalid ? effectiveValidation.error : '';
       elements.filenameTemplateError.classList.toggle('hidden', !invalid);
     }
     if (elements.saveSaveSettingsBtn && !isSaving) elements.saveSaveSettingsBtn.disabled = invalid;
-    updateFilenamePreview();
+    updateFilenamePreview({ invalid });
     return effectiveValidation;
   }
 
-  function updateFilenamePreview() {
+  function localizeFilenameValidation(validation) {
+    if (validation.valid) return validation;
+    if (validation.error === 'Template cannot be empty.') {
+      return { valid: false, error: t('filenameTemplateEmpty') };
+    }
+    const messageKeys = {
+      'Template variable braces must be balanced.': 'filenameTemplateUnbalanced',
+      'Template variable cannot be empty.': 'filenameTemplateEmptyVariable',
+      'Template variables cannot be nested.': 'filenameTemplateNested'
+    };
+    if (messageKeys[validation.error]) {
+      return { valid: false, error: t(messageKeys[validation.error]) };
+    }
+    const unsupportedVariable = /^Unsupported template variable: (.*)\.$/s.exec(validation.error);
+    if (unsupportedVariable) {
+      return {
+        valid: false,
+        error: t('unsupportedTemplateVariable', { variable: unsupportedVariable[1] })
+      };
+    }
+    return { valid: false, error: t('filenameTemplateInvalid') };
+  }
+
+  function handleFilenameTemplateInput() {
+    dirtySaveSettingsFields.add('filename.customTemplate');
+    updateFilenameRuleEditor();
+  }
+
+  function insertFilenameVariable(variable) {
+    if (isSaving || !FilenameRule.TEMPLATE_VARIABLES.includes(variable) || !elements.filenameTemplate) return;
+    const input = elements.filenameTemplate;
+    const token = `{${variable}}`;
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+    input.value = `${input.value.slice(0, start)}${token}${input.value.slice(end)}`;
+    const caret = start + token.length;
+    handleFilenameTemplateInput();
+    input.focus();
+    input.setSelectionRange?.(caret, caret);
+  }
+
+  function updateFilenamePreview({ invalid = false } = {}) {
     if (!elements.filenamePreview) return;
+    elements.filenamePreview.classList.toggle('is-invalid', invalid);
+    if (invalid) {
+      elements.filenamePreview.textContent = t('filenamePreviewUnavailable');
+      return;
+    }
     elements.filenamePreview.textContent = FilenameRule.generateFilename({
       rule: FilenameRule.normalizeFilenameRule(elements.filenameRule?.value),
       template: elements.filenameTemplate.value,
@@ -495,6 +1172,17 @@ document.addEventListener('DOMContentLoaded', () => {
       extension: 'jpg',
       now: new Date(2026, 7, 20, 14, 35, 9)
     });
+  }
+
+  function updateDirectoryPreview() {
+    if (!elements.directoryPreview) return;
+    const preview = DirectoryRule.resolveDirectory({
+      rule: DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value),
+      rootFolder: '/Images',
+      pageUrl: 'https://www.example.com/article',
+      now: new Date(2026, 7, 20, 14, 35, 9)
+    });
+    elements.directoryPreview.textContent = preview.folder;
   }
 
   async function saveSaveSettings(event) {
@@ -538,14 +1226,14 @@ document.addEventListener('DOMContentLoaded', () => {
       closeSaveSettingsModal();
       const backgroundUpdated = await notifyBackgroundConfigUpdated();
       showNotification(
-        backgroundUpdated ? 'Save settings saved.' : 'Saved. Reload the extension to apply it.',
+        localizedMessage(backgroundUpdated ? 'saveSettingsSaved' : 'savedReloadApply'),
         backgroundUpdated ? 'success' : 'warning'
       );
     } catch (error) {
       isSaving = false;
       setSaveSettingsBusy(false);
       console.error('Error saving Save settings:', error);
-      showNotification('Could not save Save settings.', 'error');
+      showNotification(localizedMessage('couldNotSaveSaveSettings'), 'error');
     }
   }
 
@@ -573,14 +1261,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function openModal(serverId = null) {
     if (serverId) {
       loadServerForEdit(serverId);
-      elements.modalTitle.textContent = 'Edit Server';
     } else {
       resetForm();
-      elements.modalTitle.textContent = 'Add Server';
     }
+    if (inputs.editId && serverId) inputs.editId.value = serverId;
+    updateServerModalTitle();
     
     elements.modal?.classList.remove('hidden');
     inputs.serverName?.focus();
+  }
+
+  function updateServerModalTitle() {
+    if (elements.modalTitle) elements.modalTitle.textContent = t(inputs.editId?.value ? 'editServer' : 'addServer');
   }
 
   function closeModal() {
@@ -595,6 +1287,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Reset connection status and folder selection
+    connectionStatusState = null;
+    folderPickerViewState = null;
     elements.connectionStatus.textContent = '';
     elements.connectionStatus.className = 'connection-status';
     elements.folderSelection?.classList.add('hidden');
@@ -613,21 +1307,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       elements.saveServerBtn.disabled = true;
-      elements.saveServerBtn.innerHTML = `${iconSvg('sync', 'loading')}Saving`;
+      elements.saveServerBtn.innerHTML = `${iconSvg('sync', 'loading')}<span data-i18n="saving">${escapeHTML(t('saving'))}</span>`;
       
       const backgroundUpdated = await saveServer(formData);
       closeModal();
       await loadServers();
       showNotification(
-        backgroundUpdated ? 'Saved' : 'Saved. Reload the extension to update the menu.',
+        localizedMessage(backgroundUpdated ? 'saved' : 'savedReloadMenu'),
         backgroundUpdated ? 'success' : 'warning'
       );
     } catch (error) {
       console.error('Error saving server:', error);
-      showNotification('Could not save settings.', 'error');
+      showNotification(localizedMessage('couldNotSaveSettings'), 'error');
     } finally {
       elements.saveServerBtn.disabled = false;
-      elements.saveServerBtn.innerHTML = `${iconSvg('save')}Save`;
+      elements.saveServerBtn.innerHTML = `${iconSvg('save')}<span data-i18n="save">${escapeHTML(t('save'))}</span>`;
     }
   }
 
@@ -652,12 +1346,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function validateFormData(data) {
     if (!data.name || !data.url || !data.username) {
-      showNotification('Name, URL, and username are required.', 'error');
+      showNotification(localizedMessage('requiredServerFields'), 'error');
       return false;
     }
 
     if (!data.url.startsWith('http://') && !data.url.startsWith('https://')) {
-      showNotification('URL must start with http:// or https://', 'error');
+      showNotification(localizedMessage('invalidServerUrl'), 'error');
       return false;
     }
 
@@ -692,7 +1386,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const config = getConnectionConfig();
 
     if (!config.url || !config.username) {
-      showConnectionStatus('URL and Username are required for testing.', 'error');
+      showConnectionStatus(localizedMessage('testingRequiresCredentials'), 'error');
       elements.folderSelection?.classList.add('hidden');
       return;
     }
@@ -700,9 +1394,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (elements.testConnectionBtn) {
         elements.testConnectionBtn.disabled = true;
-        elements.testConnectionBtn.innerHTML = `${iconSvg('sync', 'loading')}Testing`;
+        elements.testConnectionBtn.innerHTML = `${iconSvg('sync', 'loading')}<span data-i18n="testing">${escapeHTML(t('testing'))}</span>`;
       }
-      showConnectionStatus('Testing connection...', 'loading');
+      showConnectionStatus(localizedMessage('testingConnection'), 'loading');
       elements.folderSelection?.classList.add('hidden');
 
 
@@ -714,30 +1408,45 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('Test response from background:', response);
 
       if (response?.success) {
-        showConnectionStatus('Connection ready.', 'success');
+        showConnectionStatus(localizedMessage('connectionReady'), 'success');
         elements.folderSelection?.classList.remove('hidden');
         await openFolderPicker('/', response.folders || ['/']);
       } else {
-        showConnectionStatus(`Connection failed: ${response?.error || 'Unknown error'}`, 'error');
+        showConnectionStatus(localizedMessage('connectionFailed', {
+          error: response?.error
+            ? localizeWebdavError(response.error)
+            : localizedMessage('unknownError')
+        }), 'error');
         elements.folderSelection?.classList.add('hidden');
         closeFolderPicker();
       }
     } catch (error) {
       console.error('Error testing connection:', error);
-      showConnectionStatus(`Error: ${error.message || 'Could not contact background script.'}`, 'error');
+      showConnectionStatus(localizedMessage('errorMessage', {
+        error: error.message
+          ? localizeWebdavError(error.message)
+          : localizedMessage('backgroundUnavailable')
+      }), 'error');
       elements.folderSelection?.classList.add('hidden');
       closeFolderPicker();
     } finally {
       if (elements.testConnectionBtn) {
         elements.testConnectionBtn.disabled = false;
-        elements.testConnectionBtn.innerHTML = `${iconSvg('link')}Test`;
+        elements.testConnectionBtn.innerHTML = `${iconSvg('link')}<span data-i18n="testConnection">${escapeHTML(t('testConnection'))}</span>`;
       }
     }
   }
 
   function showConnectionStatus(message, type) {
+    connectionStatusState = { message, type };
+    renderConnectionStatusState();
+  }
+
+  function renderConnectionStatusState() {
+    if (!elements.connectionStatus || !connectionStatusState) return;
+    const { message, type } = connectionStatusState;
     elements.connectionStatus.className = `connection-status ${type}`;
-    elements.connectionStatus.innerHTML = `${iconSvg(getStatusIcon(type))}<span>${escapeHTML(message)}</span>`;
+    elements.connectionStatus.innerHTML = `${iconSvg(getStatusIcon(type))}<span>${escapeHTML(resolveLocalizedMessage(message))}</span>`;
   }
 
   function getConnectionConfig() {
@@ -751,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function openFolderPicker(startPath = '/', initialFolders = null) {
     const config = getConnectionConfig();
     if (!config.url || !config.username) {
-      showNotification('URL and username are required.', 'error');
+      showNotification(localizedMessage('urlUsernameRequired'), 'error');
       return;
     }
 
@@ -791,20 +1500,29 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (!response?.success) {
-        throw new Error(response?.error || 'Could not list folders.');
+        throw new Error(response?.error || '');
       }
 
       renderFolderPickerList(response.folders || []);
     } catch (error) {
       console.error('Error listing folders:', error);
-      renderFolderPickerError(error.message || 'Could not list folders.');
+      renderFolderPickerError(error.message
+        ? localizedMessage('folderListError', { error: localizeWebdavError(error.message) })
+        : localizedMessage('couldNotListFolders'));
     } finally {
       setFolderPickerLoading(false);
     }
   }
 
-  function renderFolderPickerList(folders) {
+  function renderFolderPickerList(folders, { remember = true } = {}) {
     if (!elements.folderList) return;
+
+    if (remember) {
+      folderPickerViewState = {
+        kind: 'list',
+        folders: normalizeFolderList(folders)
+      };
+    }
 
     const normalizedFolders = normalizeFolderList(folders)
       .filter(folder => folder !== folderPickerState.currentPath);
@@ -816,7 +1534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.folderList.innerHTML = `
         <div class="folder-list-empty">
           ${iconSvg('folder-open')}
-          <span>No folders here</span>
+          <span>${escapeHTML(t('noFolders'))}</span>
         </div>
       `;
       return;
@@ -839,19 +1557,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function renderFolderPickerError(message) {
+  function renderFolderPickerError(message, { remember = true } = {}) {
     if (!elements.folderList) return;
+
+    if (remember) folderPickerViewState = { kind: 'error', message };
 
     elements.folderList.innerHTML = `
       <div class="folder-list-empty">
         ${iconSvg('error')}
-        <span>${escapeHTML(message)}</span>
+        <span>${escapeHTML(resolveLocalizedMessage(message))}</span>
       </div>
     `;
     updateFolderPickerBackButton();
   }
 
-  function setFolderPickerLoading(isLoading) {
+  function setFolderPickerLoading(isLoading, { remember = true } = {}) {
     if (!elements.folderList) return;
 
     elements.folderPickerRefreshBtn.disabled = isLoading;
@@ -859,12 +1579,24 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.selectFolderBtn.disabled = isLoading;
 
     if (isLoading) {
+      if (remember) folderPickerViewState = { kind: 'loading' };
       elements.folderList.innerHTML = `
         <div class="folder-list-empty">
           ${iconSvg('sync', 'loading')}
-          <span>Loading folders</span>
+          <span>${escapeHTML(t('loadingFolders'))}</span>
         </div>
       `;
+    }
+  }
+
+  function rerenderFolderPickerView() {
+    if (!folderPickerViewState) return;
+    if (folderPickerViewState.kind === 'loading') {
+      setFolderPickerLoading(true, { remember: false });
+    } else if (folderPickerViewState.kind === 'error') {
+      renderFolderPickerError(folderPickerViewState.message, { remember: false });
+    } else if (folderPickerViewState.kind === 'list') {
+      renderFolderPickerList(folderPickerViewState.folders, { remember: false });
     }
   }
 
@@ -949,8 +1681,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const syncData = await chrome.storage.sync.get('webdavServers');
       
       const servers = localData.webdavServers || syncData.webdavServers || [];
+      renderedServers = servers.map(server => ({ ...server }));
 
       if (servers.length === 0) {
+        renderServerList([]);
         showEmptyState();
       } else {
         showServersSection();
@@ -966,7 +1700,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await clearLegacySyncServerData();
     } catch (error) {
       console.error('Error loading servers:', error);
-      showNotification('Could not load server configurations.', 'error');
+      showNotification(localizedMessage('couldNotLoadServers'), 'error');
     }
   }
 
@@ -1008,12 +1742,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="server-info">
           <div class="server-info-item">
             ${iconSvg('user')}
-            <span class="server-info-label">User:</span>
+            <span class="server-info-label">${escapeHTML(t('userLabel'))}</span>
             <span class="server-info-value">${escapeHTML(server.username)}</span>
           </div>
           <div class="server-info-item">
             ${iconSvg('folder')}
-            <span class="server-info-label">Folder:</span>
+            <span class="server-info-label">${escapeHTML(t('folderLabel'))}</span>
             <span class="server-info-value">${escapeHTML(server.folder || '/')}</span>
           </div>
         </div>
@@ -1031,10 +1765,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attach event listeners
     const editBtn = card.querySelector('.edit-btn');
     const deleteBtn = card.querySelector('.delete-btn');
-    editBtn?.setAttribute('aria-label', `Edit ${server.name}`);
-    editBtn?.setAttribute('title', 'Edit');
-    deleteBtn?.setAttribute('aria-label', `Delete ${server.name}`);
-    deleteBtn?.setAttribute('title', 'Delete');
+    editBtn?.setAttribute('aria-label', t('editServerLabel', { name: server.name }));
+    editBtn?.setAttribute('title', t('edit'));
+    deleteBtn?.setAttribute('aria-label', t('deleteServerLabel', { name: server.name }));
+    deleteBtn?.setAttribute('title', t('delete'));
     
     editBtn?.addEventListener('click', () => openModal(server.id));
     deleteBtn?.addEventListener('click', () => {
@@ -1053,7 +1787,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const server = servers.find(s => s.id === serverId);
       
       if (!server) {
-        showNotification('Server not found.', 'error');
+        showNotification(localizedMessage('serverNotFound'), 'error');
         return;
       }
 
@@ -1075,12 +1809,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.error('Error loading server for edit:', error);
-      showNotification('Could not load server.', 'error');
+      showNotification(localizedMessage('couldNotLoadServer'), 'error');
     }
   }
 
   function confirmDeleteServer(serverId, serverName) {
-    if (confirm(`Delete "${serverName}"?`)) {
+    if (confirm(t('deleteConfirm', { name: serverName }))) {
       deleteServer(serverId);
     }
   }
@@ -1098,12 +1832,12 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadServers();
       const backgroundUpdated = await notifyBackgroundConfigUpdated();
       showNotification(
-        backgroundUpdated ? 'Deleted' : 'Deleted. Reload the extension to update the menu.',
+        localizedMessage(backgroundUpdated ? 'deleted' : 'deletedReloadMenu'),
         backgroundUpdated ? 'success' : 'warning'
       );
     } catch (error) {
       console.error('Error deleting server:', error);
-      showNotification('Could not delete server.', 'error');
+      showNotification(localizedMessage('couldNotDeleteServer'), 'error');
     }
   }
 
@@ -1128,24 +1862,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showNotification(message, type = 'success') {
     if (!elements.notification) return;
-    
+
+    notificationState = { message, type };
+    renderNotificationState();
+    elements.notification.classList.remove('hidden');
+
+    // Toasts stay brief so saves feel light and non-blocking.
+    setTimeout(() => {
+      elements.notification.classList.add('hidden');
+    }, type === 'success' ? 2200 : 4200);
+  }
+
+  function renderNotificationState() {
+    if (!elements.notification || !notificationState) return;
+
     const iconMap = {
       success: 'check-circle',
       error: 'error',
       warning: 'error',
       info: 'info'
     };
-    
+    const { message, type } = notificationState;
     elements.notification.className = `notification ${type}`;
     elements.notification.querySelector('.notification-icon').innerHTML = iconSvg(iconMap[type] || 'info');
-    elements.notification.querySelector('.notification-message').textContent = message;
-    
-    elements.notification.classList.remove('hidden');
-    
-    // Toasts stay brief so saves feel light and non-blocking.
-    setTimeout(() => {
-      elements.notification.classList.add('hidden');
-    }, type === 'success' ? 2200 : 4200);
+    elements.notification.querySelector('.notification-message').textContent = resolveLocalizedMessage(message);
   }
 
   function escapeHTML(str) {

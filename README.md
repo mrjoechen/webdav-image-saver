@@ -78,6 +78,9 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 - Save original images, ask for a format each time, or convert static images to PNG, JPG, or WebP.
 - Choose automatic naming, preserve the original filename, or define a reusable filename template.
 - Keep each server's configured target folder fixed, or organize uploads automatically by date, website, or both.
+- Review live filename and directory previews before saving global rules.
+- Use the tabbed Save settings dialog to manage image format, filename, and directory preferences.
+- Switch the settings page between English and Chinese.
 - Preserve animated and unsupported images in their original format with a visible warning.
 - Show a short countdown bubble before upload, with a cancel action.
 - Open the settings page from the extension toolbar icon.
@@ -114,7 +117,9 @@ Use HTTPS WebDAV URLs whenever possible. HTTP may work technically, but it sends
 4. If **Ask every time** is enabled, choose **Original**, **PNG**, **JPG**, or **WebP** in the page prompt.
 5. Wait for the countdown or click **Cancel**.
 
-Use the settings button in the options page header to choose the global image format, filename, and save-directory preferences. PNG conversion is lossless. JPG and WebP use quality `0.92`; transparent areas are filled white when converting to JPG. Animated GIF, APNG, animated WebP, and images the browser cannot convert are uploaded unchanged and reported with a warning.
+Use the settings button in the options page header to choose global preferences. The Save settings dialog is split into **Image format**, **File naming rule**, and **Save directory rule** tabs, with live previews for generated filenames and resolved upload paths. PNG conversion is lossless. JPG and WebP use quality `0.92`; transparent areas are filled white when converting to JPG. Animated GIF, APNG, animated WebP, and images the browser cannot convert are uploaded unchanged and reported with a warning.
+
+Use the language toggle in the settings header to switch the options page between English and Chinese. The choice is remembered locally in the browser.
 
 All detection and conversion runs locally in the browser. No hosted conversion service is used.
 
@@ -132,6 +137,8 @@ The global **File naming rule** setting offers three modes:
 
 Custom templates support `{originalName}`, `{date}` (`YYYYMMDD`), `{time}` (`HHMMSS`), `{domain}`, `{pageTitle}`, `{width}`, `{height}`, and `{ext}`. The `{domain}` value removes a leading `www.` while preserving other subdomains.
 
+The settings page shows a live filename preview for every naming mode. When using a custom template, click the variable buttons to insert placeholders at the cursor. Invalid templates are reported inline, including empty templates, unbalanced braces, empty variables, nested variables, and unsupported variables.
+
 The final extension always matches the image format that is actually uploaded, even if the source filename or template specifies something else. Characters unsupported by WebDAV filesystems are cleaned automatically before upload.
 
 ### Save directory rules
@@ -144,6 +151,8 @@ The global **Save directory rule** is applied relative to each selected server's
 - **By website and date**: `/Images/example.com/2026/08`.
 
 `/Images` is only an example of a user-configured server target; it is not a hardcoded directory. Website folders remove a leading `www.` from the page domain. For every non-fixed rule, missing dynamic subfolders are created automatically before the image is uploaded.
+
+The settings page shows a path preview as you change the save-directory rule, so you can confirm the folder structure before saving.
 
 ## Permissions
 
