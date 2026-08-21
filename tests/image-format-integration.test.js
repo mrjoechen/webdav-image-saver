@@ -100,6 +100,7 @@ function createOptionsHarness({
   updateSettings,
   configResponse = { success: true },
   localStorageEntries = {},
+  prefersDarkScheme = false,
   webdavServers = []
 }) {
   const ids = [
@@ -248,7 +249,7 @@ function createOptionsHarness({
   };
   const context = {
     document,
-    window: { matchMedia: () => ({ matches: false }) },
+    window: { matchMedia: () => ({ matches: prefersDarkScheme }) },
     Date,
     localStorage: {
       getItem: key => localStorageValues.has(key) ? localStorageValues.get(key) : null,
@@ -401,7 +402,8 @@ test('options page exposes and persists combined save settings', () => {
     assert.match(optionsHtml, new RegExp(`role="option"[^>]*data-value="${value}"[^>]*>[\\s\\S]*?${label}`));
   }
 
-  assert.match(optionsHtml, /<label[^>]*id="filename-rule-label"[^>]*for="filename-rule-trigger"[^>]*>File naming rule<\/label>/);
+  assert.match(optionsHtml, /<label[^>]*id="filename-rule-label"[^>]*for="filename-rule-trigger"[^>]*>Naming mode<\/label>/);
+  assert.match(optionsHtml, /id="filename-rule-label"[^>]*data-i18n="filenameNamingMode"/);
   assert.match(optionsHtml, /<input type="hidden" id="filename-rule" value="automatic">/);
   assert.match(optionsHtml, /<div class="[^"]*format-select[^"]*rule-select[^"]*" id="filename-rule-select">/);
   assert.match(optionsHtml, /id="filename-rule-trigger"[^>]*role="combobox"[^>]*aria-controls="filename-rule-options"/);
@@ -429,7 +431,8 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsHtml, /id="directory-rule-helper"/);
   assert.match(optionsHtml, /id="directory-rule-trigger"[^>]*aria-describedby="directory-rule-helper"/);
 
-  assert.match(optionsHtml, /<label[^>]*id="directory-rule-label"[^>]*for="directory-rule-trigger"[^>]*>Save directory rule<\/label>/);
+  assert.match(optionsHtml, /<label[^>]*id="directory-rule-label"[^>]*for="directory-rule-trigger"[^>]*>Folder structure<\/label>/);
+  assert.match(optionsHtml, /id="directory-rule-label"[^>]*data-i18n="directoryFolderStructure"/);
   assert.match(optionsHtml, /<input type="hidden" id="directory-rule" value="fixed">/);
   assert.match(optionsHtml, /<div class="[^"]*format-select[^"]*rule-select[^"]*" id="directory-rule-select">/);
   assert.match(optionsHtml, /id="directory-rule-trigger"[^>]*role="combobox"[^>]*aria-controls="directory-rule-options"/);
@@ -499,6 +502,12 @@ test('options page exposes and persists combined save settings', () => {
   assert.doesNotMatch(optionsCss, /\.modal-overlay:not\(\.hidden\) \.modal-container\s*\{/);
   assert.match(optionsCss, /\.settings-tabs/);
   assert.match(optionsCss, /\.settings-tab\[aria-selected="true"\]/);
+  assert.match(optionsCss, /\.settings-tabs\s*\{[^}]*--settings-tab-radius:\s*calc\(var\(--radius\) - 6px\);/s);
+  assert.match(optionsCss, /\.settings-tabs\s*\{[^}]*--settings-tab-selected-radius:\s*calc\(var\(--radius\) - 5px\);/s);
+  assert.match(optionsCss, /\.settings-tabs\s*\{[^}]*border-radius:\s*var\(--radius\);/s);
+  assert.match(optionsCss, /\.settings-tab\s*\{[^}]*border-radius:\s*var\(--settings-tab-radius\);/s);
+  assert.match(optionsCss, /\.settings-tab:hover:not\(:disabled\)\s*\{[^}]*border-radius:\s*var\(--settings-tab-radius\);/s);
+  assert.match(optionsCss, /\.settings-tab\[aria-selected="true"\]\s*\{[^}]*border-radius:\s*var\(--settings-tab-selected-radius\);/s);
   assert.match(optionsCss, /\.settings-section/);
   assert.match(optionsCss, /\.format-select-trigger/);
   assert.match(optionsCss, /\.format-select-option/);
@@ -1224,6 +1233,26 @@ test('theme toggle uses a balanced moon icon without resizing between themes', (
     /<symbol id="icon-moon"[^>]*><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"\/><\/symbol>/
   );
   assert.match(optionsCss, /\.theme-toggle \.ui-icon\s*\{[^}]*width:\s*22px;[^}]*height:\s*22px;/s);
+});
+
+test('settings page first opens with the system theme when no preference is saved', async () => {
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'fixed' }
+  };
+  const harness = createOptionsHarness({
+    settings,
+    updateSettings: async () => settings,
+    prefersDarkScheme: true
+  });
+
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+
+  assert.equal(harness.document.documentElement.dataset.theme, 'dark');
+  assert.equal(harness.localStorageValues.has('theme'), false);
+  assert.equal(harness.elements['theme-toggle-btn'].getAttribute('aria-label'), 'Switch to light mode');
 });
 
 test('language toggle persists the choice and retranslates static and selected format labels', async () => {

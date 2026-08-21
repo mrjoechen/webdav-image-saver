@@ -137,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
       webp: 'WebP',
       formatHelp: 'Animated or unsupported images are saved in their original format with a warning.',
       fileNamingRule: 'File naming rule',
+      filenameNamingMode: 'Naming mode',
       filenameAutomatic: 'Automatic',
       filenameOriginal: 'Original filename',
       filenameCustom: 'Custom template',
@@ -147,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
       variables: 'Variables — click to insert',
       insertVariable: 'Insert {variable}',
       saveDirectoryRule: 'Save directory rule',
+      directoryFolderStructure: 'Folder structure',
       directoryFixed: 'Fixed directory',
       directoryDate: 'By date',
       directoryDomain: 'By website',
@@ -255,6 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
       webp: 'WebP',
       formatHelp: '动画图片或不支持的图片会以原格式保存，并显示警告。',
       fileNamingRule: '文件命名规则',
+      filenameNamingMode: '命名模式',
       filenameAutomatic: '自动',
       filenameOriginal: '原文件名',
       filenameCustom: '自定义模板',
@@ -265,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
       variables: '变量 — 点击插入',
       insertVariable: '插入 {variable}',
       saveDirectoryRule: '保存目录规则',
+      directoryFolderStructure: '目录结构',
       directoryFixed: '固定目录',
       directoryDate: '按日期',
       directoryDomain: '按网站',
@@ -606,6 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = systemTheme;
     updateThemeToggle(systemTheme);
   }
 

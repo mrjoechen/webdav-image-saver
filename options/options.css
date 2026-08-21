@@ -608,6 +608,9 @@ button {
 }
 
 .settings-tabs {
+  --settings-tab-radius: calc(var(--radius) - 6px);
+  --settings-tab-selected-radius: calc(var(--radius) - 5px);
+
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
@@ -615,7 +618,7 @@ button {
   padding: 5px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
 }
 
 .settings-tab {
@@ -625,7 +628,7 @@ button {
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--settings-tab-radius);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-xs);
@@ -642,12 +645,14 @@ button {
 .settings-tab:hover:not(:disabled) {
   color: var(--text-primary);
   background: var(--surface-hover);
+  border-radius: var(--settings-tab-radius);
 }
 
 .settings-tab[aria-selected="true"] {
   color: var(--text-primary);
   background: var(--surface-strong);
   border-color: var(--border-strong);
+  border-radius: var(--settings-tab-selected-radius);
   box-shadow: 0 5px 14px rgb(24 24 27 / 0.08);
 }
 
