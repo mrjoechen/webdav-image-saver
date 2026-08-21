@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "WebDAV Image Saver",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "Save web images to your WebDAV server by right-click. Supports multiple servers and local credentials.",
     "author": "WebDAV Image Saver Team",
     "homepage_url": "https://github.com/mrjoechen/webdav-image-saver",
