@@ -219,6 +219,9 @@
                 <button class="settings-tab" id="settings-tab-directory" type="button" role="tab" data-settings-tab="directory" aria-controls="settings-panel-directory" aria-selected="false" tabindex="-1">
                     <span data-i18n="saveDirectoryRule">Save directory rule</span>
                 </button>
+                <button class="settings-tab" id="settings-tab-local" type="button" role="tab" data-settings-tab="local" aria-controls="settings-panel-local" aria-selected="false" tabindex="-1">
+                    <span data-i18n="localCopy">Local copy</span>
+                </button>
             </div>
 
             <form id="save-settings-form" class="modal-content">
@@ -387,6 +390,156 @@
                         <output id="directory-preview" class="directory-preview" aria-live="polite" aria-atomic="true"></output>
                     </div>
                 </section>
+
+                <section class="settings-section settings-panel" id="settings-panel-local" role="tabpanel" aria-labelledby="settings-tab-local" hidden>
+                    <h4 id="local-copy-section-title" data-i18n="localCopy">Local copy</h4>
+                    <div class="form-group">
+                        <label class="local-copy-toggle" for="local-copy-enabled">
+                            <input type="checkbox" id="local-copy-enabled">
+                            <span class="local-copy-switch" aria-hidden="true"></span>
+                            <span data-i18n="localCopyEnable">Save a local copy of each upload</span>
+                        </label>
+                        <div class="form-helper">
+                            <svg class="ui-icon"><use href="#icon-info"></use></svg>
+                            <span data-i18n="localCopyHelp">When enabled, the same converted file uploaded to WebDAV is also written to the selected folder. Local naming and folder rules can be configured independently below or matched to WebDAV.</span>
+                        </div>
+                    </div>
+                    <div id="local-copy-fields">
+                        <div class="form-group">
+                            <label for="local-folder-name" data-i18n="localFolder">Target folder</label>
+                            <div class="folder-input-row">
+                                <input
+                                    type="text"
+                                    id="local-folder-name"
+                                    class="form-input"
+                                    readonly
+                                    placeholder="No folder selected"
+                                    data-i18n-placeholder="localFolderPlaceholder"
+                                    aria-describedby="local-folder-helper"
+                                >
+                                <button type="button" class="icon-button" id="choose-local-folder-btn" aria-label="Choose local folder" title="Choose local folder" data-i18n-aria-label="chooseLocalFolder" data-i18n-title="chooseLocalFolder">
+                                    <svg class="ui-icon"><use href="#icon-folder-open"></use></svg>
+                                </button>
+                            </div>
+                            <div id="local-folder-helper" class="form-helper">
+                                <svg class="ui-icon"><use href="#icon-info"></use></svg>
+                                <span data-i18n="localFolderHelp">Chrome only shows the folder name, not the full path.</span>
+                            </div>
+                            <p id="local-folder-error" class="form-error hidden" role="status" aria-live="polite"></p>
+                        </div>
+                        <div class="form-group">
+                            <label id="local-directory-rule-label" for="local-directory-rule-trigger" data-i18n="localDirectoryRule">Local folder rule</label>
+                            <input type="hidden" id="local-directory-rule" value="webdav">
+                            <div class="format-select rule-select" id="local-directory-rule-select">
+                                <button
+                                    type="button"
+                                    class="format-select-trigger"
+                                    id="local-directory-rule-trigger"
+                                    role="combobox"
+                                    aria-haspopup="listbox"
+                                    aria-expanded="false"
+                                    aria-controls="local-directory-rule-options"
+                                    aria-describedby="local-directory-rule-helper"
+                                    aria-labelledby="local-directory-rule-label local-directory-rule-value"
+                                >
+                                    <span id="local-directory-rule-value">Match WebDAV settings</span>
+                                    <svg class="ui-icon format-select-chevron" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+                                </button>
+                                <div
+                                    class="format-select-list hidden"
+                                    id="local-directory-rule-options"
+                                    role="listbox"
+                                    aria-labelledby="local-directory-rule-label"
+                                >
+                                    <button type="button" class="format-select-option local-directory-rule-option" role="option" data-value="webdav" aria-selected="true">
+                                        <span data-i18n="matchWebdavSettings">Match WebDAV settings</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-directory-rule-option" role="option" data-value="fixed" aria-selected="false">
+                                        <span data-i18n="directoryFixed">Fixed directory</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-directory-rule-option" role="option" data-value="date" aria-selected="false">
+                                        <span data-i18n="directoryDate">By date</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-directory-rule-option" role="option" data-value="domain" aria-selected="false">
+                                        <span data-i18n="directoryDomain">By website</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-directory-rule-option" role="option" data-value="domain-date" aria-selected="false">
+                                        <span data-i18n="directoryDomainDate">By website and date</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="local-directory-rule-helper" class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span data-i18n="localDirectoryRuleHelp">Choose an independent local folder structure, or keep it synchronized with the WebDAV directory rule.</span></div>
+                        </div>
+                        <div class="form-group">
+                            <label id="local-filename-rule-label" for="local-filename-rule-trigger" data-i18n="localFilenameNamingMode">Local naming mode</label>
+                            <input type="hidden" id="local-filename-rule" value="webdav">
+                            <div class="format-select rule-select" id="local-filename-rule-select">
+                                <button
+                                    type="button"
+                                    class="format-select-trigger"
+                                    id="local-filename-rule-trigger"
+                                    role="combobox"
+                                    aria-haspopup="listbox"
+                                    aria-expanded="false"
+                                    aria-controls="local-filename-rule-options"
+                                    aria-describedby="local-filename-rule-helper"
+                                    aria-labelledby="local-filename-rule-label local-filename-rule-value"
+                                >
+                                    <span id="local-filename-rule-value">Match WebDAV settings</span>
+                                    <svg class="ui-icon format-select-chevron" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+                                </button>
+                                <div
+                                    class="format-select-list hidden"
+                                    id="local-filename-rule-options"
+                                    role="listbox"
+                                    aria-labelledby="local-filename-rule-label"
+                                >
+                                    <button type="button" class="format-select-option local-filename-rule-option" role="option" data-value="webdav" aria-selected="true">
+                                        <span data-i18n="matchWebdavSettings">Match WebDAV settings</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-filename-rule-option" role="option" data-value="automatic" aria-selected="false">
+                                        <span data-i18n="filenameAutomatic">Automatic</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-filename-rule-option" role="option" data-value="original" aria-selected="false">
+                                        <span data-i18n="filenameOriginal">Original filename</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                    <button type="button" class="format-select-option local-filename-rule-option" role="option" data-value="custom" aria-selected="false">
+                                        <span data-i18n="filenameCustom">Custom template</span><svg class="ui-icon"><use href="#icon-check"></use></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="local-filename-rule-helper" class="form-helper"><svg class="ui-icon"><use href="#icon-info"></use></svg><span data-i18n="localFilenameRuleHelp">Choose an independent local filename rule, or keep it synchronized with the WebDAV filename rule.</span></div>
+                        </div>
+                        <div id="local-filename-template-group" class="filename-template-group" hidden>
+                            <div class="form-group">
+                                <label for="local-filename-template" data-i18n="filenameTemplate">Filename template</label>
+                                <input type="text" id="local-filename-template" class="form-input" value="{originalName}_{date}_{domain}.{ext}" aria-describedby="local-filename-template-helper local-filename-template-error" aria-invalid="false">
+                                <div id="local-filename-template-helper" class="form-helper">
+                                    <svg class="ui-icon"><use href="#icon-info"></use></svg>
+                                    <span data-i18n="filenameTemplateHelp">Type a template or insert variables below.</span>
+                                </div>
+                                <p id="local-filename-template-error" class="form-error hidden" role="status" aria-live="polite"></p>
+                            </div>
+                            <div id="local-filename-variable-actions" class="variable-help template-variables" role="group" aria-labelledby="local-filename-variables-label">
+                                <span id="local-filename-variables-label" data-i18n="variables">Variables</span>
+                                <div class="variable-token-list">
+                                    <button type="button" class="local-variable-token" data-variable="originalName">{originalName}</button>
+                                    <button type="button" class="local-variable-token" data-variable="date">{date}</button>
+                                    <button type="button" class="local-variable-token" data-variable="time">{time}</button>
+                                    <button type="button" class="local-variable-token" data-variable="domain">{domain}</button>
+                                    <button type="button" class="local-variable-token" data-variable="pageTitle">{pageTitle}</button>
+                                    <button type="button" class="local-variable-token" data-variable="width">{width}</button>
+                                    <button type="button" class="local-variable-token" data-variable="height">{height}</button>
+                                    <button type="button" class="local-variable-token" data-variable="ext">{ext}</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="local-copy-preview-block" class="filename-preview-block">
+                            <p class="filename-preview-label" data-i18n="localPathPreview">Local path preview</p>
+                            <output id="local-copy-preview" class="filename-preview template-preview" aria-live="polite"></output>
+                        </div>
+                    </div>
+                </section>
             </form>
 
             <div class="modal-footer">
@@ -446,6 +599,8 @@
     <script src="../image-format.js"></script>
     <script src="../filename-rule.js"></script>
     <script src="../directory-rule.js"></script>
+    <script src="../local-copy.js"></script>
+    <script src="../local-copy-fs.js"></script>
     <script src="../settings.js"></script>
     <script src="options.js"></script>
 </body>

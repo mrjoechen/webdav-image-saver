@@ -41,13 +41,16 @@ jobs:
         run: |
           node --check background.js
           node --check content_script.js
+          node --check local-copy.js
+          node --check local-copy-fs.js
           node --check options/options.js
+          node --test
 
       - name: Check for remote executable resources
         shell: bash
         run: |
           if grep -RInE 'fonts\.googleapis|gstatic|eval\(|new Function' \
-            manifest.json background.js content_script.js options assets; then
+            manifest.json background.js content_script.js local-copy.js local-copy-fs.js options assets; then
             echo "Potential remote resource or dynamic code usage found." >&2
             exit 1
           fi
@@ -61,7 +64,7 @@ jobs:
           staging_dir="$RUNNER_TEMP/webdav-image-saver"
 
           mkdir -p "$staging_dir"
-          cp manifest.json background.js content_script.js PRIVACY.md STORE_DESCRIPTION.md "$staging_dir/"
+          cp manifest.json background.js content_script.js image-format.js filename-rule.js directory-rule.js local-copy.js local-copy-fs.js settings.js PRIVACY.md STORE_DESCRIPTION.md "$staging_dir/"
           cp -R assets icons options "$staging_dir/"
 
           (

@@ -8,17 +8,20 @@
     const directoryRule = typeof module === 'object' && module.exports
         ? require('./directory-rule.js')
         : root.DirectoryRule;
-    const appSettings = factory(imageFormat, filenameRule, directoryRule);
+    const localCopy = typeof module === 'object' && module.exports
+        ? require('./local-copy.js')
+        : root.LocalCopy;
+    const appSettings = factory(imageFormat, filenameRule, directoryRule, localCopy);
 
     if (typeof module === 'object' && module.exports) {
         module.exports = appSettings;
     }
 
     root.AppSettings = appSettings;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (imageFormat, filenameRule, directoryRule) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (imageFormat, filenameRule, directoryRule, localCopy) {
     const SETTINGS_STORAGE_KEY = 'appSettings';
     const LEGACY_IMAGE_FORMAT_KEY = 'imageFormatPreference';
-    const SETTINGS_SCHEMA_VERSION = 2;
+    const SETTINGS_SCHEMA_VERSION = 4;
     const DEFAULT_CUSTOM_TEMPLATE = filenameRule.DEFAULT_CUSTOM_TEMPLATE;
     let settingsUpdateQueue = Promise.resolve();
 
@@ -38,7 +41,8 @@
             },
             directory: {
                 rule: 'fixed'
-            }
+            },
+            localCopy: localCopy.createDefaultLocalCopy()
         };
     }
 
@@ -47,6 +51,7 @@
         const sourceImage = isPlainObject(source.image) ? source.image : {};
         const sourceFilename = isPlainObject(source.filename) ? source.filename : {};
         const sourceDirectory = isPlainObject(source.directory) ? source.directory : {};
+        const sourceLocalCopy = isPlainObject(source.localCopy) ? source.localCopy : {};
         const hasStoredImageFormat = Object.prototype.hasOwnProperty.call(sourceImage, 'saveFormat');
         const sourceSchemaVersion = Number.isInteger(source.schemaVersion) && source.schemaVersion > 0
             ? source.schemaVersion
@@ -83,7 +88,8 @@
                 rule: isFutureSchema && Object.prototype.hasOwnProperty.call(sourceDirectory, 'rule')
                     ? sourceDirectory.rule
                     : directoryRule.normalizeDirectoryRule(sourceDirectory.rule)
-            }
+            },
+            localCopy: localCopy.normalizeLocalCopy(sourceLocalCopy, isFutureSchema)
         };
     }
 

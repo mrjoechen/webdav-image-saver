@@ -6,6 +6,9 @@ const vm = require('node:vm');
 const ImageFormat = require('../image-format.js');
 const FilenameRule = require('../filename-rule.js');
 const DirectoryRule = require('../directory-rule.js');
+const LocalCopy = require('../local-copy.js');
+const AppSettings = require('../settings.js');
+const defaultLocalCopy = LocalCopy.createDefaultLocalCopy();
 
 const projectRoot = path.resolve(__dirname, '..');
 
@@ -26,6 +29,7 @@ function createFakeElement(id, { value = '', className = '', dataset = {}, hidde
     selectionStart: 0,
     selectionEnd: 0,
     disabled: false,
+    checked: false,
     style: {},
     children,
     descendants: new Set(),
@@ -110,7 +114,14 @@ function createOptionsHarness({
     'filename-rule', 'filename-rule-select', 'filename-rule-trigger', 'filename-rule-value', 'filename-rule-options',
     'filename-template-group', 'filename-template', 'filename-template-error',
     'filename-preview-block', 'filename-preview', 'directory-rule', 'directory-rule-select', 'directory-rule-trigger',
-    'directory-rule-value', 'directory-rule-options', 'directory-preview', 'close-save-settings-btn', 'cancel-save-settings-btn',
+    'directory-rule-value', 'directory-rule-options', 'directory-preview',
+    'local-copy-enabled', 'local-copy-fields', 'local-folder-name', 'choose-local-folder-btn', 'local-folder-error',
+    'local-directory-rule', 'local-directory-rule-select', 'local-directory-rule-trigger', 'local-directory-rule-value',
+    'local-directory-rule-options',
+    'local-filename-rule', 'local-filename-rule-select', 'local-filename-rule-trigger', 'local-filename-rule-value',
+    'local-filename-rule-options', 'local-filename-template-group', 'local-filename-template',
+    'local-filename-template-error', 'local-copy-preview',
+    'close-save-settings-btn', 'cancel-save-settings-btn',
     'save-save-settings-btn', 'theme-toggle-btn', 'theme-toggle-icon', 'server-modal', 'modal-title',
     'close-modal-btn', 'cancel-btn', 'server-form', 'save-server-btn', 'test-connection-btn',
     'connection-status', 'folder-selection', 'custom-folder-path', 'open-folder-picker-btn',
@@ -118,14 +129,27 @@ function createOptionsHarness({
     'folder-picker-back-btn', 'folder-picker-refresh-btn', 'folder-list', 'selected-folder-path', 'notification',
     'edit-id', 'server-name', 'server-url', 'server-username', 'server-password',
     'language-toggle-btn', 'save-settings-title', 'image-format-section-title', 'filename-section-title',
-    'directory-section-title', 'settings-tab-format', 'settings-tab-filename', 'settings-tab-directory',
-    'settings-panel-format', 'settings-panel-filename', 'settings-panel-directory'
+    'directory-section-title', 'local-copy-section-title', 'settings-tab-format', 'settings-tab-filename', 'settings-tab-directory',
+    'settings-tab-local', 'settings-panel-format', 'settings-panel-filename', 'settings-panel-directory', 'settings-panel-local'
   ];
   const elements = Object.fromEntries(ids.map(id => [id, createFakeElement(id)]));
   elements['save-settings-title'].dataset.i18n = 'saveSettings';
   elements['image-format-section-title'].dataset.i18n = 'imageFormat';
   elements['filename-section-title'].dataset.i18n = 'fileNamingRule';
   elements['directory-section-title'].dataset.i18n = 'saveDirectoryRule';
+  elements['local-copy-section-title'].dataset.i18n = 'localCopy';
+  elements['local-copy-fields'].toggleAttribute('hidden', true);
+  elements['local-filename-template-group'].toggleAttribute('hidden', true);
+  elements['local-directory-rule'].value = 'webdav';
+  elements['local-directory-rule-trigger'].setAttribute('role', 'combobox');
+  elements['local-directory-rule-trigger'].setAttribute('aria-expanded', 'false');
+  elements['local-directory-rule-options'].setAttribute('role', 'listbox');
+  elements['local-directory-rule-options'].classList.add('hidden');
+  elements['local-filename-rule'].value = 'webdav';
+  elements['local-filename-rule-trigger'].setAttribute('role', 'combobox');
+  elements['local-filename-rule-trigger'].setAttribute('aria-expanded', 'false');
+  elements['local-filename-rule-options'].setAttribute('role', 'listbox');
+  elements['local-filename-rule-options'].classList.add('hidden');
   ['empty-state', 'server-modal', 'save-settings-modal', 'folder-picker-modal'].forEach(id => {
     elements[id].classList.add('hidden');
   });
@@ -160,15 +184,35 @@ function createOptionsHarness({
     option.setAttribute('aria-selected', String(index === 0));
     return option;
   });
+  const localFilenameRuleOptions = ['automatic', 'original', 'custom'].map((value, index) => {
+    const option = createFakeElement(`local-filename-rule-option-${value}`, { dataset: { value } });
+    option.setAttribute('aria-selected', String(index === 0));
+    return option;
+  });
+  const localDirectoryRuleOptions = ['webdav', 'fixed', 'date', 'domain', 'domain-date'].map((value, index) => {
+    const option = createFakeElement(`local-directory-rule-option-${value}`, { dataset: { value } });
+    option.setAttribute('aria-selected', String(index === 0));
+    return option;
+  });
+  localFilenameRuleOptions.unshift(createFakeElement('local-filename-rule-option-webdav', {
+    dataset: { value: 'webdav' }
+  }));
+  localFilenameRuleOptions.forEach((option, index) => option.setAttribute('aria-selected', String(index === 0)));
   const variableTokens = FilenameRule.TEMPLATE_VARIABLES.map(variable => {
     const token = createFakeElement(`variable-${variable}`, { dataset: { variable } });
+    token.textContent = `{${variable}}`;
+    return token;
+  });
+  const localVariableTokens = FilenameRule.TEMPLATE_VARIABLES.map(variable => {
+    const token = createFakeElement(`local-variable-${variable}`, { dataset: { variable } });
     token.textContent = `{${variable}}`;
     return token;
   });
   const saveSettingsTabs = [
     elements['settings-tab-format'],
     elements['settings-tab-filename'],
-    elements['settings-tab-directory']
+    elements['settings-tab-directory'],
+    elements['settings-tab-local']
   ];
   const documentListeners = new Map();
   const document = {
@@ -179,6 +223,9 @@ function createOptionsHarness({
       if (selector === '.image-format-option' || selector === '.format-select-option') return formatOptions;
       if (selector === '.filename-rule-option') return filenameRuleOptions;
       if (selector === '.directory-rule-option') return directoryRuleOptions;
+      if (selector === '.local-directory-rule-option') return localDirectoryRuleOptions;
+      if (selector === '.local-filename-rule-option') return localFilenameRuleOptions;
+      if (selector === '.local-variable-token') return localVariableTokens;
       if (selector === '[data-i18n]') {
         return Object.values(elements).filter(element => element.dataset.i18n);
       }
@@ -194,7 +241,7 @@ function createOptionsHarness({
     createTextNode: text => ({ textContent: text })
   };
   Object.values(elements).forEach(element => { element.onFocus = focused => { document.activeElement = focused; }; });
-  [...formatOptions, ...filenameRuleOptions, ...directoryRuleOptions, ...variableTokens, ...saveSettingsTabs].forEach(option => {
+  [...formatOptions, ...filenameRuleOptions, ...directoryRuleOptions, ...localDirectoryRuleOptions, ...localFilenameRuleOptions, ...variableTokens, ...localVariableTokens, ...saveSettingsTabs].forEach(option => {
     option.onFocus = focused => { document.activeElement = focused; };
   });
   const modalFocusables = [
@@ -208,6 +255,14 @@ function createOptionsHarness({
     ...variableTokens,
     elements['directory-rule-trigger'],
     ...directoryRuleOptions,
+    elements['local-copy-enabled'],
+    elements['choose-local-folder-btn'],
+    elements['local-directory-rule-trigger'],
+    ...localDirectoryRuleOptions,
+    elements['local-filename-rule-trigger'],
+    ...localFilenameRuleOptions,
+    elements['local-filename-template'],
+    ...localVariableTokens,
     elements['cancel-save-settings-btn'],
     elements['save-save-settings-btn']
   ];
@@ -222,11 +277,29 @@ function createOptionsHarness({
   elements['image-format-options'].descendants = new Set(formatOptions);
   elements['filename-rule-options'].descendants = new Set(filenameRuleOptions);
   elements['directory-rule-options'].descendants = new Set(directoryRuleOptions);
+  elements['local-directory-rule-options'].descendants = new Set(localDirectoryRuleOptions);
+  elements['local-filename-rule-options'].descendants = new Set(localFilenameRuleOptions);
+  elements['local-filename-template-group'].descendants = new Set([elements['local-filename-template'], ...localVariableTokens]);
+  elements['local-copy-fields'].descendants = new Set([
+    elements['local-folder-name'],
+    elements['choose-local-folder-btn'],
+    elements['local-directory-rule-trigger'],
+    ...localDirectoryRuleOptions,
+    elements['local-filename-rule-trigger'],
+    ...localFilenameRuleOptions,
+    elements['local-filename-template'],
+    ...localVariableTokens
+  ]);
   elements['settings-panel-format'].descendants = new Set([elements['image-format-trigger'], ...formatOptions]);
   elements['settings-panel-filename'].descendants = new Set([
     elements['filename-rule-trigger'], ...filenameRuleOptions, elements['filename-template'], ...variableTokens
   ]);
   elements['settings-panel-directory'].descendants = new Set([elements['directory-rule-trigger'], ...directoryRuleOptions]);
+  elements['settings-panel-local'].descendants = new Set([
+    elements['local-copy-enabled'],
+    elements['choose-local-folder-btn'],
+    ...elements['local-copy-fields'].descendants
+  ]);
   const runtimeCalls = [];
   const localStorageValues = new Map(Object.entries(localStorageEntries));
   let storedWebdavServers = JSON.parse(JSON.stringify(webdavServers));
@@ -249,17 +322,29 @@ function createOptionsHarness({
   };
   const context = {
     document,
-    window: { matchMedia: () => ({ matches: prefersDarkScheme }) },
+    window: {
+      matchMedia: () => ({ matches: prefersDarkScheme }),
+      showDirectoryPicker: async () => {
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        throw error;
+      }
+    },
     Date,
     localStorage: {
       getItem: key => localStorageValues.has(key) ? localStorageValues.get(key) : null,
       setItem: (key, value) => { localStorageValues.set(key, String(value)); }
     },
     chrome,
-    AppSettings: { SETTINGS_SCHEMA_VERSION: 2, loadSettings, updateSettings },
+    AppSettings: { SETTINGS_SCHEMA_VERSION: AppSettings.SETTINGS_SCHEMA_VERSION, loadSettings, updateSettings },
     ImageFormat,
     FilenameRule,
     DirectoryRule,
+    LocalCopy,
+    LocalCopyFs: {
+      saveDirectoryHandle: async () => {},
+      loadDirectoryHandle: async () => null
+    },
     console: { error() {}, warn() {}, log() {} },
     confirm: () => true,
     setTimeout: () => 0
@@ -292,10 +377,15 @@ ${initMarker}`;
   return {
     elements,
     document,
+    window: context.window,
+    localCopyFs: context.LocalCopyFs,
     formatOptions,
     filenameRuleOptions,
     directoryRuleOptions,
+    localDirectoryRuleOptions,
+    localFilenameRuleOptions,
     variableTokens,
+    localVariableTokens,
     runtimeCalls,
     localStorageValues,
     notificationMessage,
@@ -324,7 +414,7 @@ function deferred() {
 test('background loads save-rule support and routes selected formats through conversion', () => {
   const backgroundSource = readProjectFile('background.js');
 
-  assert.match(backgroundSource, /importScripts\(['"]image-format\.js['"]\);\s*importScripts\(['"]filename-rule\.js['"]\);\s*importScripts\(['"]directory-rule\.js['"]\);\s*importScripts\(['"]settings\.js['"]\)/);
+  assert.match(backgroundSource, /importScripts\(['"]image-format\.js['"]\);\s*importScripts\(['"]filename-rule\.js['"]\);\s*importScripts\(['"]directory-rule\.js['"]\);\s*importScripts\(['"]local-copy\.js['"]\);\s*importScripts\(['"]local-copy-fs\.js['"]\);\s*importScripts\(['"]settings\.js['"]\)/);
   assert.match(backgroundSource, /AppSettings\.loadSettings/);
   assert.match(backgroundSource, /appSettings\.image\.saveFormat/);
   assert.match(backgroundSource, /configReloadQueue/);
@@ -387,7 +477,7 @@ test('options page exposes and persists combined save settings', () => {
   assert.doesNotMatch(optionsHtml, /id="image-format-modal"/);
   assert.doesNotMatch(optionsHtml, /id="image-format-form"/);
   assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>/);
-  assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>\s*<script src="\.\.\/filename-rule\.js"><\/script>\s*<script src="\.\.\/directory-rule\.js"><\/script>\s*<script src="\.\.\/settings\.js"><\/script>/);
+  assert.match(optionsHtml, /<script src="\.\.\/image-format\.js"><\/script>\s*<script src="\.\.\/filename-rule\.js"><\/script>\s*<script src="\.\.\/directory-rule\.js"><\/script>\s*<script src="\.\.\/local-copy\.js"><\/script>\s*<script src="\.\.\/local-copy-fs\.js"><\/script>\s*<script src="\.\.\/settings\.js"><\/script>/);
   assert.match(optionsHtml, /<script src="\.\.\/settings\.js"><\/script>/);
   assert.doesNotMatch(optionsHtml, /<select[^>]*id="image-format-preference"/);
   assert.match(optionsHtml, /id="image-format-trigger"[^>]*role="combobox"/);
@@ -448,11 +538,21 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsHtml, /relative to the target folder configured on the selected WebDAV server/i);
   assert.match(optionsHtml, /\/Images is only an example/i);
   assert.match(optionsHtml, /id="save-settings-tabs"[^>]*role="tablist"/);
-  for (const name of ['format', 'filename', 'directory']) {
+  for (const name of ['format', 'filename', 'directory', 'local']) {
     assert.match(optionsHtml, new RegExp(`id="settings-tab-${name}"[^>]*role="tab"[^>]*aria-controls="settings-panel-${name}"`));
     assert.match(optionsHtml, new RegExp(`id="settings-panel-${name}"[^>]*role="tabpanel"[^>]*aria-labelledby="settings-tab-${name}"`));
   }
   assert.match(optionsHtml, /id="directory-preview"[^>]*aria-live="polite"/);
+  assert.match(optionsHtml, /id="local-copy-enabled"/);
+  assert.match(optionsHtml, /id="choose-local-folder-btn"/);
+  assert.match(optionsHtml, /id="local-directory-rule"/);
+  assert.match(optionsHtml, /class="[^"]*local-directory-rule-option[^"]*"[^>]*data-value="webdav"/);
+  assert.match(optionsHtml, /id="local-filename-rule"/);
+  assert.match(optionsHtml, /class="[^"]*local-filename-rule-option[^"]*"[^>]*data-value="webdav"/);
+  assert.match(optionsHtml, /id="local-copy-preview"/);
+  assert.match(optionsSource, /LocalCopy\.resolveLocalSave/);
+  assert.match(optionsSource, /showDirectoryPicker/);
+  assert.match(optionsSource, /localCopy:\s*\{/s);
   assert.match(optionsHtml, /id="language-toggle-btn"[^>]*aria-label="Switch to Chinese"/);
 
   assert.match(optionsSource, /persistedSaveSettings/);
@@ -483,7 +583,8 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsSource, /function applyLanguage/);
   assert.match(optionsSource, /function closeSaveSettingsModal\(\)\s*\{[\s\S]*?restoreSaveSettingsControls\(\);/);
   assert.match(optionsSource, /filenameTemplateGroup\?\.toggleAttribute\(['"]hidden['"], !isCustom\)/);
-  assert.match(optionsSource, /saveSaveSettingsBtn\.disabled = invalid/);
+  assert.match(optionsSource, /function updateSaveSettingsValidity/);
+  assert.match(optionsSource, /saveSaveSettingsBtn\.disabled = Boolean\(filenameInvalid \|\| localInvalid\)/);
   assert.match(optionsSource, /event\.target === elements\.saveSettingsModal/);
   assert.match(optionsSource, /new Date\(2026,\s*7,\s*20,\s*14,\s*35,\s*9\)/);
   assert.match(optionsSource, /imageUrl:\s*['"]https:\/\/cdn\.example\.net\/photos\/sunset\.png['"]/);
@@ -516,6 +617,8 @@ test('options page exposes and persists combined save settings', () => {
   assert.match(optionsCss, /\.template-variables/);
   assert.match(optionsCss, /\.variable-token/);
   assert.match(optionsCss, /\.directory-preview/);
+  assert.match(optionsCss, /\.form-group label\.local-copy-toggle\s*\{[^}]*display:\s*flex;[^}]*margin-bottom:\s*0;/s);
+  assert.match(optionsCss, /\.local-copy-switch\s*\{[^}]*display:\s*inline-block;[^}]*min-width:\s*42px;[^}]*height:\s*24px;/s);
   assert.match(optionsCss, /\.language-toggle/);
   assert.match(optionsCss, /\.form-error/);
   assert.match(optionsCss, /\.form-input\.is-invalid/);
@@ -619,7 +722,8 @@ test('save settings modal restores edits, validates templates, previews current 
     assert.deepEqual(JSON.parse(JSON.stringify(updates)), [{
       image: { saveFormat: 'webp' },
       filename: { rule: 'custom', customTemplate: '{domain}_{date}.{ext}' },
-      directory: { rule: 'domain-date' }
+      directory: { rule: 'domain-date' },
+      localCopy: defaultLocalCopy
     }]);
     assert.deepEqual(JSON.parse(JSON.stringify(harness.runtimeCalls)), [{ action: 'configUpdated' }]);
     assert.equal(harness.notificationMessage.textContent, 'Save settings saved.');
@@ -741,7 +845,8 @@ test('filename and directory rules use image-format-style dropdown controls', as
   assert.deepEqual(JSON.parse(JSON.stringify(updates)), [{
     image: { saveFormat: 'original' },
     filename: { rule: 'custom', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
-    directory: { rule: 'domain-date' }
+    directory: { rule: 'domain-date' },
+    localCopy: defaultLocalCopy
   }]);
 });
 
@@ -819,16 +924,18 @@ test('valid custom template without ext previews and saves with the generated ex
   assert.deepEqual(JSON.parse(JSON.stringify(updates)), [{
     image: { saveFormat: 'original' },
     filename: { rule: 'custom', customTemplate: 'photo-{domain}' },
-    directory: { rule: 'fixed' }
+    directory: { rule: 'fixed' },
+    localCopy: defaultLocalCopy
   }]);
 });
 
 test('future-schema save settings submit only explicit edits instead of UI fallbacks', async () => {
   const futureSettings = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     image: { saveFormat: 'avif' },
     filename: { rule: 'content-hash', customTemplate: '{futureVariable}' },
-    directory: { rule: 'project' }
+    directory: { rule: 'project' },
+    localCopy: defaultLocalCopy
   };
 
   function createFutureHarness() {
@@ -884,10 +991,11 @@ test('future-schema save settings submit only explicit edits instead of UI fallb
 
 test('future custom templates stay preserved until a filename control is explicitly edited', async () => {
   const futureSettings = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     image: { saveFormat: 'original' },
     filename: { rule: 'custom', customTemplate: '{futureVariable}' },
-    directory: { rule: 'project' }
+    directory: { rule: 'project' },
+    localCopy: defaultLocalCopy
   };
 
   function createFutureCustomHarness() {
@@ -1418,7 +1526,7 @@ test('server card language rendering follows the latest successful storage load'
   assert.equal(harness.elements['server-list'].children.length, 0);
 });
 
-test('save settings organizes format, filename, and directory in accessible keyboard tabs', async () => {
+test('save settings organizes format, filename, directory, and local copy in accessible keyboard tabs', async () => {
   const settings = {
     image: { saveFormat: 'original' },
     filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
@@ -1431,15 +1539,18 @@ test('save settings organizes format, filename, and directory in accessible keyb
   const formatTab = harness.elements['settings-tab-format'];
   const filenameTab = harness.elements['settings-tab-filename'];
   const directoryTab = harness.elements['settings-tab-directory'];
+  const localTab = harness.elements['settings-tab-local'];
   const formatPanel = harness.elements['settings-panel-format'];
   const filenamePanel = harness.elements['settings-panel-filename'];
   const directoryPanel = harness.elements['settings-panel-directory'];
+  const localPanel = harness.elements['settings-panel-local'];
 
   assert.equal(formatTab.getAttribute('role'), 'tab');
   assert.equal(formatTab.getAttribute('aria-selected'), 'true');
   assert.equal(formatPanel.hasAttribute('hidden'), false);
   assert.equal(filenamePanel.hasAttribute('hidden'), true);
   assert.equal(directoryPanel.hasAttribute('hidden'), true);
+  assert.equal(localPanel.hasAttribute('hidden'), true);
 
   await filenameTab.emit('click');
   assert.equal(filenameTab.getAttribute('aria-selected'), 'true');
@@ -1454,12 +1565,18 @@ test('save settings organizes format, filename, and directory in accessible keyb
   assert.equal(directoryPanel.hasAttribute('hidden'), false);
   assert.equal(filenamePanel.hasAttribute('hidden'), true);
 
-  await directoryTab.emit('keydown', { key: 'Home' });
+  await directoryTab.emit('keydown', { key: 'ArrowRight' });
+  assert.equal(localTab.getAttribute('aria-selected'), 'true');
+  assert.equal(localPanel.hasAttribute('hidden'), false);
+  assert.equal(directoryPanel.hasAttribute('hidden'), true);
+
+  await localTab.emit('keydown', { key: 'Home' });
   assert.equal(formatTab.getAttribute('aria-selected'), 'true');
   assert.equal(harness.document.activeElement, formatTab);
   assert.equal(formatPanel.hasAttribute('hidden'), false);
   assert.equal(filenamePanel.hasAttribute('hidden'), true);
   assert.equal(directoryPanel.hasAttribute('hidden'), true);
+  assert.equal(localPanel.hasAttribute('hidden'), true);
 });
 
 test('directory rule changes render the resolved sample path immediately', async () => {
@@ -1481,7 +1598,7 @@ test('directory rule changes render the resolved sample path immediately', async
 test('filename variable tokens replace the current selection and mark the template as edited', async () => {
   const updates = [];
   const settings = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     image: { saveFormat: 'original' },
     filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
     directory: { rule: 'fixed' }
@@ -1516,4 +1633,102 @@ test('filename variable tokens replace the current selection and mark the templa
   assert.deepEqual(JSON.parse(JSON.stringify(updates)), [{
     filename: { rule: 'custom', customTemplate: 'prefix-{domain}suffix.{ext}' }
   }]);
+});
+
+test('local copy tab stores a selected folder with independent naming and folder rules', async () => {
+  const updates = [];
+  const savedHandles = [];
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'date' },
+    localCopy: defaultLocalCopy
+  };
+  const harness = createOptionsHarness({
+    settings,
+    updateSettings: async (_storage, update) => {
+      updates.push(update);
+      return {
+        ...settings,
+        ...update,
+        localCopy: {
+          ...settings.localCopy,
+          ...update.localCopy,
+          directory: { ...settings.localCopy.directory, ...update.localCopy?.directory },
+          filename: { ...settings.localCopy.filename, ...update.localCopy?.filename }
+        }
+      };
+    }
+  });
+  harness.localCopyFs.saveDirectoryHandle = async handle => { savedHandles.push(handle); };
+  const folderHandle = { name: 'Pictures', requestPermission: async () => 'granted' };
+  harness.window.showDirectoryPicker = async () => folderHandle;
+
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.elements['settings-tab-local'].emit('click');
+
+  assert.equal(harness.elements['settings-panel-local'].hasAttribute('hidden'), false);
+  assert.equal(harness.elements['local-copy-fields'].hasAttribute('hidden'), true);
+
+  harness.elements['local-copy-enabled'].checked = true;
+  await harness.elements['local-copy-enabled'].emit('change');
+  assert.equal(harness.elements['local-folder-name'].value, 'Pictures');
+  assert.equal(harness.elements['local-copy-fields'].hasAttribute('hidden'), false);
+  assert.equal(harness.elements['local-copy-preview'].textContent, 'Pictures/2026/08/image_20260820143509_www_example_com.jpg');
+
+  await harness.localFilenameRuleOptions.find(option => option.dataset.value === 'original').emit('click');
+  assert.equal(harness.elements['local-filename-rule'].value, 'original');
+  assert.equal(harness.elements['local-copy-preview'].textContent, 'Pictures/2026/08/sunset.jpg');
+
+  await harness.localDirectoryRuleOptions.find(option => option.dataset.value === 'domain-date').emit('click');
+  assert.equal(harness.elements['local-directory-rule'].value, 'domain-date');
+  assert.equal(harness.elements['local-copy-preview'].textContent, 'Pictures/example.com/2026/08/sunset.jpg');
+
+  await harness.elements['save-settings-form'].emit('submit');
+  assert.equal(savedHandles[0], folderHandle);
+  assert.deepEqual(JSON.parse(JSON.stringify(updates)), [{
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'date' },
+    localCopy: {
+      enabled: true,
+      folderName: 'Pictures',
+      directory: { rule: 'domain-date' },
+      filename: { rule: 'original', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE }
+    }
+  }]);
+});
+
+test('local match options update the preview when WebDAV rules change', async () => {
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'automatic', customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE },
+    directory: { rule: 'fixed' },
+    localCopy: {
+      enabled: true,
+      folderName: 'Pictures',
+      directory: { rule: 'webdav' },
+      filename: { rule: 'webdav', customTemplate: 'kept-local-{date}.{ext}' }
+    }
+  };
+  const harness = createOptionsHarness({ settings, updateSettings: async () => settings });
+
+  await harness.document.emit('DOMContentLoaded');
+  await flushOptionsInit();
+  await harness.elements['save-settings-btn'].emit('click');
+  await harness.elements['settings-tab-local'].emit('click');
+
+  assert.equal(harness.elements['local-directory-rule'].value, 'webdav');
+  assert.equal(harness.elements['local-filename-rule'].value, 'webdav');
+  assert.equal(harness.elements['local-copy-preview'].textContent, 'Pictures/image_20260820143509_www_example_com.jpg');
+
+  await harness.filenameRuleOptions.find(option => option.dataset.value === 'custom').emit('click');
+  harness.elements['filename-template'].value = 'webdav-{date}.{ext}';
+  await harness.elements['filename-template'].emit('input');
+  await harness.directoryRuleOptions.find(option => option.dataset.value === 'domain-date').emit('click');
+
+  assert.equal(harness.elements['local-copy-preview'].textContent, 'Pictures/example.com/2026/08/webdav-20260820.jpg');
+  assert.equal(harness.elements['local-filename-template'].value, 'kept-local-{date}.{ext}');
 });

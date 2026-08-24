@@ -1,6 +1,8 @@
 importScripts('image-format.js');
 importScripts('filename-rule.js');
 importScripts('directory-rule.js');
+importScripts('local-copy.js');
+importScripts('local-copy-fs.js');
 importScripts('settings.js');
 
 // Store configurations in memory for quick access
@@ -14,6 +16,7 @@ const contentScriptInjectionPromises = new Map();
 const confirmedWebdavCollections = new Set();
 const webdavDirectoryCreationPromises = new Map();
 let webdavDirectoryCacheGeneration = 0;
+let persistLocalCopyImpl = LocalCopyFs.writeLocalCopy;
 
 // --- Initialization ---
 chrome.runtime.onInstalled.addListener(() => {
@@ -462,6 +465,21 @@ async function uploadImage(imageUrl, pageUrl, pageTitle, serverConfig, uploadId,
             statusMessage = preparedImage.warningCode
                 ? getConversionWarningMessage(preparedImage, filename)
                 : `Saved as "${filename}"`;
+            const localCopyResult = await saveLocalCopyOfUpload({
+                blob: preparedImage.blob,
+                webdavFilename: filename,
+                imageUrl,
+                pageUrl,
+                pageTitle,
+                width: dimensions.width,
+                height: dimensions.height,
+                extension: finalExtension,
+                now: uploadTime
+            });
+            if (localCopyResult.warning) {
+                status = 'warning';
+                statusMessage = `${statusMessage} ${localCopyResult.warning}`;
+            }
         } else {
              let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
              try {
@@ -490,6 +508,39 @@ async function uploadImage(imageUrl, pageUrl, pageTitle, serverConfig, uploadId,
         console.log(`[${uploadId}] Successfully sent status message to tab ${tabId}`);
     }).catch(e => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, e));
     }
+
+async function saveLocalCopyOfUpload({ blob, webdavFilename, imageUrl, pageUrl, pageTitle, width, height, extension, now }) {
+    const plan = LocalCopy.resolveLocalSave({
+        localCopy: appSettings.localCopy,
+        webdavDirectoryRule: appSettings.directory?.rule,
+        webdavFilename,
+        webdavFilenameRule: appSettings.filename,
+        imageUrl,
+        pageUrl,
+        pageTitle,
+        width,
+        height,
+        extension,
+        now
+    });
+    if (plan.skip) {
+        return plan.reason === 'folder-not-selected'
+            ? { warning: 'Local copy skipped: choose a folder in Save settings.' }
+            : {};
+    }
+
+    try {
+        await persistLocalCopyImpl({ blob, relativePath: plan.relativePath });
+        return {};
+    } catch (error) {
+        console.warn('Local copy failed:', error);
+        return { warning: 'Local copy failed.' };
+    }
+}
+
+function setPersistLocalCopy(writer) {
+    persistLocalCopyImpl = typeof writer === 'function' ? writer : LocalCopyFs.writeLocalCopy;
+}
 
 function getConversionWarningMessage(preparedImage, finalFilename) {
     const filenameExtension = finalFilename.includes('.')

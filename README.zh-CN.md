@@ -207,6 +207,8 @@ manifest.json
 image-format.js
 filename-rule.js
 directory-rule.js
+local-copy.js
+local-copy-fs.js
 settings.js
 background.js
 content_script.js
@@ -234,6 +236,8 @@ cp \
   "$package_repo_root/image-format.js" \
   "$package_repo_root/filename-rule.js" \
   "$package_repo_root/directory-rule.js" \
+  "$package_repo_root/local-copy.js" \
+  "$package_repo_root/local-copy-fs.js" \
   "$package_repo_root/settings.js" \
   "$package_repo_root/background.js" \
   "$package_repo_root/content_script.js" \

@@ -8,9 +8,11 @@ const { webcrypto } = require('node:crypto');
 const ImageFormat = require('../image-format.js');
 const FilenameRule = require('../filename-rule.js');
 const DirectoryRule = require('../directory-rule.js');
+const LocalCopy = require('../local-copy.js');
+const LocalCopyFs = require('../local-copy-fs.js');
 
 const backgroundSource = readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
-const testExport = ';globalThis.__backgroundWebdavTest = { ensureWebdavDirectories, resetWebdavDirectoryCache, uploadImage, configReady };';
+const testExport = ';globalThis.__backgroundWebdavTest = { ensureWebdavDirectories, resetWebdavDirectoryCache, uploadImage, configReady, setPersistLocalCopy, saveLocalCopyOfUpload };';
 
 function response(status, statusText = '', body = '') {
   return {
@@ -56,8 +58,22 @@ async function createWorker(fetchImpl, options = {}) {
     ImageFormat: options.ImageFormat || {},
     FilenameRule: options.FilenameRule || {},
     DirectoryRule: options.DirectoryRule || {},
+    LocalCopy: options.LocalCopy || { resolveLocalSave: () => ({ skip: true, reason: 'disabled' }) },
+    LocalCopyFs: options.LocalCopyFs || LocalCopyFs,
     chrome: {
-      runtime: { onInstalled: noopEvent, onMessage: noopEvent, openOptionsPage() {} },
+      runtime: {
+        onInstalled: noopEvent,
+        onMessage: noopEvent,
+        openOptionsPage() {},
+        getURL: path => `chrome-extension://test/${path}`,
+        getContexts: async () => [],
+        sendMessage: options.sendMessage || (async () => undefined)
+      },
+      offscreen: {
+        createDocument: options.createOffscreenDocument || (async () => {
+          throw new Error('offscreen should not be used in this test');
+        })
+      },
       contextMenus: { onClicked: noopEvent, removeAll(callback) { callback(); }, create(_item, callback) { callback?.(); } },
       action: { onClicked: noopEvent },
       tabs: {
@@ -73,6 +89,9 @@ async function createWorker(fetchImpl, options = {}) {
   context.globalThis = context;
   vm.runInNewContext(`${backgroundSource}${testExport}`, context, { filename: 'background.js' });
   await context.__backgroundWebdavTest.configReady;
+  if (typeof options.persistLocalCopy === 'function') {
+    context.__backgroundWebdavTest.setPersistLocalCopy(options.persistLocalCopy);
+  }
   return context.__backgroundWebdavTest;
 }
 
@@ -762,4 +781,209 @@ test('uses actual ICO MIME aliases for extensionless and incorrectly extended up
     assert.equal(statuses[0].message.status, 'success');
     assert.equal(statuses[0].message.message, 'Saved as "favicon.ico"');
   }
+});
+
+test('saves the uploaded blob with independent local naming and directory rules', async () => {
+  const localCopies = [];
+  const statuses = [];
+  const sourceBlob = new Blob(['photo-bytes'], { type: 'image/jpeg' });
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'date' },
+    localCopy: {
+      enabled: true,
+      folderName: 'Pictures',
+      directory: { rule: 'date' },
+      filename: { rule: 'custom', customTemplate: '{originalName}-{date}.{ext}' }
+    }
+  };
+  const worker = await createWorker(async (_url, options) => {
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => sourceBlob };
+    }
+    return response(201, 'Created');
+  }, {
+    settings,
+    ImageFormat,
+    FilenameRule,
+    DirectoryRule,
+    LocalCopy,
+    sentMessages: statuses,
+    persistLocalCopy: async payload => {
+      localCopies.push(payload);
+      return { filename: payload.relativePath.split('/').pop(), relativePath: payload.relativePath };
+    }
+  });
+
+  await worker.uploadImage(
+    'https://cdn.example/photo.png',
+    'https://www.example.com/article',
+    'An article',
+    server,
+    'upload-local',
+    7,
+    'original'
+  );
+  await new Promise(resolve => setImmediate(resolve));
+
+  const now = new Date();
+  const dateStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const monthStamp = String(now.getMonth() + 1).padStart(2, '0');
+  assert.equal(localCopies.length, 1);
+  assert.equal(localCopies[0].blob, sourceBlob);
+  assert.equal(localCopies[0].relativePath, `${now.getFullYear()}/${monthStamp}/photo-${dateStamp}.jpg`);
+  assert.equal(statuses[0].message.status, 'success');
+  assert.equal(statuses[0].message.message, 'Saved as "photo.jpg"');
+});
+
+test('uses the exact WebDAV filename and directory rules when local rules inherit them', async () => {
+  const localCopies = [];
+  const sourceBlob = new Blob(['photo-bytes'], { type: 'image/jpeg' });
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'custom', customTemplate: 'webdav-{date}.{ext}' },
+    directory: { rule: 'domain-date' },
+    localCopy: {
+      enabled: true,
+      folderName: 'Pictures',
+      directory: { rule: 'webdav' },
+      filename: { rule: 'webdav', customTemplate: 'unused-{date}.{ext}' }
+    }
+  };
+  const worker = await createWorker(async (_url, options) => {
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => sourceBlob };
+    }
+    return response(201, 'Created');
+  }, {
+    settings,
+    ImageFormat,
+    FilenameRule,
+    DirectoryRule,
+    LocalCopy,
+    persistLocalCopy: async payload => {
+      localCopies.push(payload);
+      return { filename: payload.relativePath.split('/').pop(), relativePath: payload.relativePath };
+    }
+  });
+
+  await worker.uploadImage(
+    'https://cdn.example/photo.png',
+    'https://www.example.com/article',
+    'An article',
+    server,
+    'upload-local-inherit',
+    7,
+    'original'
+  );
+  await new Promise(resolve => setImmediate(resolve));
+
+  const now = new Date();
+  const dateStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const monthStamp = String(now.getMonth() + 1).padStart(2, '0');
+  assert.equal(localCopies.length, 1);
+  assert.equal(
+    localCopies[0].relativePath,
+    `example.com/${now.getFullYear()}/${monthStamp}/webdav-${dateStamp}.jpg`
+  );
+});
+
+test('keeps the WebDAV upload and warns when the local copy fails', async () => {
+  const statuses = [];
+  const sourceBlob = new Blob(['photo-bytes'], { type: 'image/jpeg' });
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'fixed' },
+    localCopy: {
+      enabled: true,
+      folderName: 'Pictures',
+      filename: { rule: 'original', customTemplate: '{originalName}.{ext}' }
+    }
+  };
+  const worker = await createWorker(async (_url, options) => {
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => sourceBlob };
+    }
+    return response(201, 'Created');
+  }, {
+    settings,
+    ImageFormat,
+    FilenameRule,
+    DirectoryRule,
+    LocalCopy,
+    sentMessages: statuses,
+    persistLocalCopy: async () => {
+      throw new Error('disk full');
+    }
+  });
+
+  await worker.uploadImage(
+    'https://cdn.example/photo.png',
+    'https://page.example/article',
+    'An article',
+    server,
+    'upload-local-fail',
+    7,
+    'original'
+  );
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(statuses[0].message.status, 'warning');
+  assert.equal(statuses[0].message.message, 'Saved as "photo.jpg" Local copy failed.');
+});
+
+test('writes the original Blob directly without extension messaging or an offscreen document', async () => {
+  const sourceBytes = [0, 255, 128, 13, 10, 42];
+  const sourceBlob = new Blob([Uint8Array.from(sourceBytes)], { type: 'image/jpeg' });
+  const writes = [];
+  let runtimeMessages = 0;
+  let offscreenDocuments = 0;
+  const worker = await createWorker(async () => response(200), {
+    settings: {
+      image: { saveFormat: 'original' },
+      directory: { rule: 'fixed' },
+      localCopy: {
+        enabled: true,
+        folderName: 'Pictures',
+        filename: { rule: 'original', customTemplate: '{originalName}.{ext}' }
+      }
+    },
+    LocalCopy,
+    LocalCopyFs: {
+      ...LocalCopyFs,
+      async writeLocalCopy(payload) {
+        writes.push(payload);
+        return { filename: 'photo.jpg', relativePath: payload.relativePath };
+      }
+    },
+    sendMessage: async () => {
+      runtimeMessages += 1;
+      throw new Error('runtime messaging must not be used for local writes');
+    },
+    createOffscreenDocument: async () => {
+      offscreenDocuments += 1;
+      throw new Error('offscreen documents must not be used for local writes');
+    }
+  });
+
+  const result = await worker.saveLocalCopyOfUpload({
+    blob: sourceBlob,
+    imageUrl: 'https://cdn.example/photo.jpg',
+    pageUrl: 'https://page.example/article',
+    pageTitle: 'Article',
+    width: 640,
+    height: 480,
+    extension: 'jpg',
+    now: new Date(2026, 7, 24, 12, 0, 0)
+  });
+
+  assert.equal(result.warning, undefined);
+  assert.deepEqual(Object.keys(result), []);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].blob, sourceBlob);
+  assert.equal(writes[0].relativePath, 'photo.jpg');
+  assert.equal(runtimeMessages, 0);
+  assert.equal(offscreenDocuments, 0);
 });

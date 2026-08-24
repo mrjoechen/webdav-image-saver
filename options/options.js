@@ -30,6 +30,25 @@ document.addEventListener('DOMContentLoaded', () => {
     directoryRuleValue: document.getElementById('directory-rule-value'),
     directoryRuleOptions: document.getElementById('directory-rule-options'),
     directoryPreview: document.getElementById('directory-preview'),
+    localCopyEnabled: document.getElementById('local-copy-enabled'),
+    localCopyFields: document.getElementById('local-copy-fields'),
+    localFolderName: document.getElementById('local-folder-name'),
+    chooseLocalFolderBtn: document.getElementById('choose-local-folder-btn'),
+    localFolderError: document.getElementById('local-folder-error'),
+    localDirectoryRule: document.getElementById('local-directory-rule'),
+    localDirectoryRuleSelect: document.getElementById('local-directory-rule-select'),
+    localDirectoryRuleTrigger: document.getElementById('local-directory-rule-trigger'),
+    localDirectoryRuleValue: document.getElementById('local-directory-rule-value'),
+    localDirectoryRuleOptions: document.getElementById('local-directory-rule-options'),
+    localFilenameRule: document.getElementById('local-filename-rule'),
+    localFilenameRuleSelect: document.getElementById('local-filename-rule-select'),
+    localFilenameRuleTrigger: document.getElementById('local-filename-rule-trigger'),
+    localFilenameRuleValue: document.getElementById('local-filename-rule-value'),
+    localFilenameRuleOptions: document.getElementById('local-filename-rule-options'),
+    localFilenameTemplateGroup: document.getElementById('local-filename-template-group'),
+    localFilenameTemplate: document.getElementById('local-filename-template'),
+    localFilenameTemplateError: document.getElementById('local-filename-template-error'),
+    localCopyPreview: document.getElementById('local-copy-preview'),
     closeSaveSettingsBtn: document.getElementById('close-save-settings-btn'),
     cancelSaveSettingsBtn: document.getElementById('cancel-save-settings-btn'),
     saveSaveSettingsBtn: document.getElementById('save-save-settings-btn'),
@@ -75,9 +94,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const imageFormatOptionElements = [...document.querySelectorAll('.image-format-option')];
   const filenameRuleOptionElements = [...document.querySelectorAll('.filename-rule-option')];
   const directoryRuleOptionElements = [...document.querySelectorAll('.directory-rule-option')];
+  const localDirectoryRuleOptionElements = [...document.querySelectorAll('.local-directory-rule-option')];
+  const localFilenameRuleOptionElements = [...document.querySelectorAll('.local-filename-rule-option')];
   const saveSettingsTabElements = [...document.querySelectorAll('.settings-tab')];
   const filenameVariableElements = [...document.querySelectorAll('.variable-token')];
-  const saveSettingsPanelElements = ['format', 'filename', 'directory']
+  const localFilenameVariableElements = [...document.querySelectorAll('.local-variable-token')];
+  const saveSettingsPanelElements = ['format', 'filename', 'directory', 'local']
     .map(name => document.getElementById(`settings-panel-${name}`))
     .filter(Boolean);
   const imageFormatLabelKeys = {
@@ -97,6 +119,14 @@ document.addEventListener('DOMContentLoaded', () => {
     date: 'directoryDate',
     domain: 'directoryDomain',
     'domain-date': 'directoryDomainDate'
+  };
+  const localFilenameRuleLabelKeys = {
+    webdav: 'matchWebdavSettings',
+    ...filenameRuleLabelKeys
+  };
+  const localDirectoryRuleLabelKeys = {
+    webdav: 'matchWebdavSettings',
+    ...directoryRuleLabelKeys
   };
   const translations = {
     en: {
@@ -141,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
       filenameAutomatic: 'Automatic',
       filenameOriginal: 'Original filename',
       filenameCustom: 'Custom template',
+      matchWebdavSettings: 'Match WebDAV settings',
       filenameRuleHelp: 'Choose a safe default, keep the original file name, or build a descriptive template.',
       filenameTemplate: 'Filename template',
       filenameTemplateHelp: 'Type a template or insert variables below.',
@@ -155,6 +186,22 @@ document.addEventListener('DOMContentLoaded', () => {
       directoryDomainDate: 'By website and date',
       directoryRuleHelp: 'Rules are relative to the target folder configured on the selected WebDAV server. /Images is only an example, never a fixed path.',
       pathPreview: 'Path preview',
+      localCopy: 'Local copy',
+      localCopyEnable: 'Save a local copy of each upload',
+      localCopyHelp: 'When enabled, the same converted file uploaded to WebDAV is also written to the selected folder. Local naming and folder rules can be configured independently below or matched to WebDAV.',
+      localFolder: 'Target folder',
+      localFolderPlaceholder: 'No folder selected',
+      chooseLocalFolder: 'Choose local folder',
+      localFolderHelp: 'Chrome only shows the folder name, not the full path.',
+      localFolderRequired: 'Choose a local folder before enabling Save a local copy.',
+      localFolderPickerUnavailable: 'This browser cannot choose a local folder.',
+      localFolderPermissionDenied: 'Permission to write in that folder was denied.',
+      localDirectoryRule: 'Local folder rule',
+      localDirectoryRuleHelp: 'Choose an independent local folder structure, or keep it synchronized with the WebDAV directory rule.',
+      localFilenameNamingMode: 'Local naming mode',
+      localFilenameRuleHelp: 'Choose an independent local filename rule, or keep it synchronized with the WebDAV filename rule.',
+      localPathPreview: 'Local path preview',
+      localCopyPreviewUnavailable: 'Fix the template to see a preview.',
       chooseFolder: 'Choose Folder',
       closeFolderPicker: 'Close folder picker',
       parentFolder: 'Parent folder',
@@ -261,6 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
       filenameAutomatic: '自动',
       filenameOriginal: '原文件名',
       filenameCustom: '自定义模板',
+      matchWebdavSettings: '与 WebDAV 配置保持一致',
       filenameRuleHelp: '选择安全的默认规则、保留原文件名，或创建描述性模板。',
       filenameTemplate: '文件名模板',
       filenameTemplateHelp: '输入模板，或插入下方变量。',
@@ -275,6 +323,22 @@ document.addEventListener('DOMContentLoaded', () => {
       directoryDomainDate: '按网站和日期',
       directoryRuleHelp: '规则相对于所选 WebDAV 服务器配置的目标文件夹。/Images 仅为示例，不是固定路径。',
       pathPreview: '路径预览',
+      localCopy: '保存本地',
+      localCopyEnable: '上传时同时保存一份到本地',
+      localCopyHelp: '启用后，上传到 WebDAV 的同一份转换后文件也会写入所选本地文件夹。文件命名和文件夹规则可在下方独立设置，也可与 WebDAV 配置保持一致。',
+      localFolder: '目标文件夹',
+      localFolderPlaceholder: '尚未选择文件夹',
+      chooseLocalFolder: '选择本地文件夹',
+      localFolderHelp: 'Chrome 只会显示文件夹名称，不会显示完整路径。',
+      localFolderRequired: '启用“保存本地”前请先选择文件夹。',
+      localFolderPickerUnavailable: '当前浏览器无法选择本地文件夹。',
+      localFolderPermissionDenied: '没有写入该文件夹的权限。',
+      localDirectoryRule: '本地文件夹规则',
+      localDirectoryRuleHelp: '可选择独立的本地文件夹结构，或与 WebDAV 保存目录规则保持同步。',
+      localFilenameNamingMode: '本地命名模式',
+      localFilenameRuleHelp: '可选择独立的本地文件命名规则，或与 WebDAV 文件命名规则保持同步。',
+      localPathPreview: '本地路径预览',
+      localCopyPreviewUnavailable: '请修正规则后查看预览。',
       chooseFolder: '选择文件夹',
       closeFolderPicker: '关闭文件夹选择器',
       parentFolder: '上级文件夹',
@@ -342,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const currentSettingsSchemaVersion = Number.isInteger(AppSettings.SETTINGS_SCHEMA_VERSION)
     ? AppSettings.SETTINGS_SCHEMA_VERSION
-    : 2;
+    : 3;
   let persistedSaveSettings = {
     schemaVersion: currentSettingsSchemaVersion,
     image: { saveFormat: 'original' },
@@ -350,7 +414,8 @@ document.addEventListener('DOMContentLoaded', () => {
       rule: 'automatic',
       customTemplate: FilenameRule.DEFAULT_CUSTOM_TEMPLATE
     },
-    directory: { rule: 'fixed' }
+    directory: { rule: 'fixed' },
+    localCopy: LocalCopy.createDefaultLocalCopy()
   };
   let saveSettingsReady = false;
   let saveSettingsLoading = false;
@@ -365,6 +430,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let folderPickerViewState = null;
   let notificationState = null;
   const dirtySaveSettingsFields = new Set();
+  let pendingLocalDirectoryHandle = null;
 
   // Initialize the app
   init();
@@ -402,6 +468,24 @@ document.addEventListener('DOMContentLoaded', () => {
       option.addEventListener('click', () => selectRuleValue('directory', option.dataset.value));
       option.addEventListener('keydown', event => handleRuleOptionKeydown('directory', event, index));
     });
+    elements.localDirectoryRuleTrigger?.addEventListener('click', () => toggleRuleSelect('localDirectory'));
+    elements.localDirectoryRuleTrigger?.addEventListener('keydown', event => handleRuleTriggerKeydown('localDirectory', event));
+    localDirectoryRuleOptionElements.forEach((option, index) => {
+      option.addEventListener('click', () => selectRuleValue('localDirectory', option.dataset.value));
+      option.addEventListener('keydown', event => handleRuleOptionKeydown('localDirectory', event, index));
+    });
+    elements.localFilenameRuleTrigger?.addEventListener('click', () => toggleRuleSelect('localFilename'));
+    elements.localFilenameRuleTrigger?.addEventListener('keydown', event => handleRuleTriggerKeydown('localFilename', event));
+    localFilenameRuleOptionElements.forEach((option, index) => {
+      option.addEventListener('click', () => selectRuleValue('localFilename', option.dataset.value));
+      option.addEventListener('keydown', event => handleRuleOptionKeydown('localFilename', event, index));
+    });
+    elements.localCopyEnabled?.addEventListener('change', handleLocalCopyEnabledChange);
+    elements.chooseLocalFolderBtn?.addEventListener('click', () => chooseLocalFolder({ requireSelection: false }));
+    localFilenameVariableElements.forEach(token => {
+      token.addEventListener('click', () => insertLocalFilenameVariable(token.dataset.variable));
+    });
+    elements.localFilenameTemplate?.addEventListener('input', handleLocalFilenameTemplateInput);
     saveSettingsTabElements.forEach((tab, index) => {
       tab.addEventListener('click', () => activateSaveSettingsTab(getSaveSettingsTabName(tab), { focus: true }));
       tab.addEventListener('keydown', event => handleSaveSettingsTabKeydown(event, index));
@@ -413,12 +497,24 @@ document.addEventListener('DOMContentLoaded', () => {
       dirtySaveSettingsFields.add('filename.rule');
       setRuleSelectValue('filename', elements.filenameRule?.value);
       updateFilenameRuleEditor();
+      updateLocalCopyEditor();
     });
     elements.filenameTemplate?.addEventListener('input', handleFilenameTemplateInput);
     elements.directoryRule?.addEventListener('change', () => {
       dirtySaveSettingsFields.add('directory.rule');
       setRuleSelectValue('directory', elements.directoryRule?.value);
       updateDirectoryPreview();
+      updateLocalCopyEditor();
+    });
+    elements.localFilenameRule?.addEventListener('change', () => {
+      dirtySaveSettingsFields.add('localCopy.filename.rule');
+      setRuleSelectValue('localFilename', elements.localFilenameRule?.value);
+      updateLocalCopyEditor();
+    });
+    elements.localDirectoryRule?.addEventListener('change', () => {
+      dirtySaveSettingsFields.add('localCopy.directory.rule');
+      setRuleSelectValue('localDirectory', elements.localDirectoryRule?.value);
+      updateLocalCopyEditor();
     });
     elements.closeSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
     elements.cancelSaveSettingsBtn?.addEventListener('click', closeSaveSettingsModal);
@@ -452,6 +548,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (isRuleSelectOpen('directory') && !elements.directoryRuleSelect?.contains(event.target)) {
         closeRuleSelect('directory');
+      }
+      if (isRuleSelectOpen('localDirectory') && !elements.localDirectoryRuleSelect?.contains(event.target)) {
+        closeRuleSelect('localDirectory');
+      }
+      if (isRuleSelectOpen('localFilename') && !elements.localFilenameRuleSelect?.contains(event.target)) {
+        closeRuleSelect('localFilename');
       }
     });
 
@@ -548,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
       );
       elements.languageToggleBtn.setAttribute('title', t('switchLanguage'));
     }
-    filenameVariableElements.forEach(token => {
+    [...filenameVariableElements, ...localFilenameVariableElements].forEach(token => {
       const variable = `{${token.dataset.variable || ''}}`;
       token.setAttribute('aria-label', t('insertVariable', { variable }));
       token.setAttribute('title', t('insertVariable', { variable }));
@@ -557,6 +659,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setImageFormatControl(elements.imageFormatPreference?.value || 'original');
     setRuleSelectValue('filename', elements.filenameRule?.value || 'automatic');
     setRuleSelectValue('directory', elements.directoryRule?.value || 'fixed');
+    setRuleSelectValue('localDirectory', elements.localDirectoryRule?.value || 'webdav');
+    setRuleSelectValue('localFilename', elements.localFilenameRule?.value || 'webdav');
+    updateLocalCopyEditor();
     updateThemeToggle(getCurrentTheme());
     refreshSaveSettingsButtonCopy();
     if (elements.filenameTemplate?.getAttribute('aria-invalid') === 'true') updateFilenameRuleEditor();
@@ -637,6 +742,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const sourceImage = source.image && typeof source.image === 'object' ? source.image : {};
     const sourceFilename = source.filename && typeof source.filename === 'object' ? source.filename : {};
     const sourceDirectory = source.directory && typeof source.directory === 'object' ? source.directory : {};
+    const sourceLocalCopy = source.localCopy && typeof source.localCopy === 'object' ? source.localCopy : {};
+    const sourceLocalDirectory = sourceLocalCopy.directory && typeof sourceLocalCopy.directory === 'object'
+      ? sourceLocalCopy.directory
+      : {};
+    const sourceLocalFilename = sourceLocalCopy.filename && typeof sourceLocalCopy.filename === 'object'
+      ? sourceLocalCopy.filename
+      : {};
     return {
       ...source,
       schemaVersion: Number.isInteger(source.schemaVersion) && source.schemaVersion > 0
@@ -662,6 +774,30 @@ document.addEventListener('DOMContentLoaded', () => {
         rule: Object.prototype.hasOwnProperty.call(sourceDirectory, 'rule')
           ? sourceDirectory.rule
           : 'fixed'
+      },
+      localCopy: {
+        ...sourceLocalCopy,
+        enabled: Object.prototype.hasOwnProperty.call(sourceLocalCopy, 'enabled')
+          ? sourceLocalCopy.enabled
+          : false,
+        folderName: Object.prototype.hasOwnProperty.call(sourceLocalCopy, 'folderName')
+          ? sourceLocalCopy.folderName
+          : '',
+        directory: {
+          ...sourceLocalDirectory,
+          rule: Object.prototype.hasOwnProperty.call(sourceLocalDirectory, 'rule')
+            ? sourceLocalDirectory.rule
+            : 'webdav'
+        },
+        filename: {
+          ...sourceLocalFilename,
+          rule: Object.prototype.hasOwnProperty.call(sourceLocalFilename, 'rule')
+            ? sourceLocalFilename.rule
+            : 'webdav',
+          customTemplate: Object.prototype.hasOwnProperty.call(sourceLocalFilename, 'customTemplate')
+            ? sourceLocalFilename.customTemplate
+            : FilenameRule.DEFAULT_CUSTOM_TEMPLATE
+        }
       }
     };
   }
@@ -697,6 +833,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeSaveSettingsTab !== 'format') closeImageFormatSelect();
     if (activeSaveSettingsTab !== 'filename') closeRuleSelect('filename');
     if (activeSaveSettingsTab !== 'directory') closeRuleSelect('directory');
+    if (activeSaveSettingsTab !== 'local') {
+      closeRuleSelect('localDirectory');
+      closeRuleSelect('localFilename');
+    }
 
     saveSettingsTabElements.forEach(tab => {
       const selected = tab === target;
@@ -794,11 +934,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (control.disabled ||
         control === elements.imageFormatPreference ||
         control === elements.filenameRule ||
-        control === elements.directoryRule) return false;
+        control === elements.directoryRule ||
+        control === elements.localDirectoryRule) return false;
       if (elements.filenameTemplateGroup?.hasAttribute('hidden') && elements.filenameTemplateGroup.contains(control)) return false;
       if (elements.imageFormatOptions?.classList.contains('hidden') && elements.imageFormatOptions.contains(control)) return false;
       if (elements.filenameRuleOptions?.classList.contains('hidden') && elements.filenameRuleOptions.contains(control)) return false;
       if (elements.directoryRuleOptions?.classList.contains('hidden') && elements.directoryRuleOptions.contains(control)) return false;
+      if (elements.localDirectoryRuleOptions?.classList.contains('hidden') && elements.localDirectoryRuleOptions.contains(control)) return false;
+      if (elements.localFilenameRuleOptions?.classList.contains('hidden') && elements.localFilenameRuleOptions.contains(control)) return false;
+      if (elements.localFilenameTemplateGroup?.hasAttribute('hidden') && elements.localFilenameTemplateGroup.contains(control)) return false;
+      if (elements.localCopyFields?.hasAttribute('hidden') && elements.localCopyFields.contains(control)) return false;
+      if (control === elements.localFilenameRule) return false;
       if (saveSettingsPanelElements.some(panel => panel.hasAttribute('hidden') && panel.contains(control))) return false;
       return true;
     });
@@ -829,11 +975,22 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.filenameRule,
       elements.filenameTemplate,
       elements.directoryRule,
+      elements.localCopyEnabled,
+      elements.chooseLocalFolderBtn,
+      elements.localFolderName,
+      elements.localDirectoryRuleTrigger,
+      elements.localDirectoryRule,
+      elements.localFilenameRuleTrigger,
+      elements.localFilenameRule,
+      elements.localFilenameTemplate,
       ...imageFormatOptionElements,
       ...filenameRuleOptionElements,
       ...directoryRuleOptionElements,
+      ...localDirectoryRuleOptionElements,
+      ...localFilenameRuleOptionElements,
       ...saveSettingsTabElements,
-      ...filenameVariableElements
+      ...filenameVariableElements,
+      ...localFilenameVariableElements
     ];
     elements.saveSettingsDialog?.setAttribute('aria-busy', String(saving));
     elements.saveSettingsModal?.setAttribute('aria-busy', String(saving));
@@ -842,7 +999,10 @@ document.addEventListener('DOMContentLoaded', () => {
     controls.forEach(control => {
       if (control) control.disabled = saving;
     });
-    if (!saving) updateFilenameRuleEditor();
+    if (!saving) {
+      updateFilenameRuleEditor();
+      updateLocalCopyEditor();
+    }
   }
 
   function restoreSaveSettingsControls() {
@@ -857,8 +1017,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.directoryRule) {
       setRuleSelectValue('directory', persistedSaveSettings.directory.rule);
     }
+    pendingLocalDirectoryHandle = null;
+    restoreLocalCopyControls(persistedSaveSettings.localCopy);
     updateFilenameRuleEditor();
     updateDirectoryPreview();
+    updateLocalCopyEditor();
+  }
+
+  function restoreLocalCopyControls(localCopy) {
+    const settings = LocalCopy.normalizeLocalCopy(localCopy);
+    if (elements.localCopyEnabled) elements.localCopyEnabled.checked = Boolean(settings.enabled);
+    if (elements.localFolderName) elements.localFolderName.value = String(settings.folderName || '');
+    if (elements.localDirectoryRule) setRuleSelectValue('localDirectory', settings.directory.rule);
+    if (elements.localFilenameRule) setRuleSelectValue('localFilename', settings.filename.rule);
+    if (elements.localFilenameTemplate) {
+      elements.localFilenameTemplate.value = String(settings.filename.customTemplate ?? '');
+    }
+    setLocalFolderError('');
   }
 
   function setImageFormatControl(value) {
@@ -899,10 +1074,49 @@ document.addEventListener('DOMContentLoaded', () => {
         labelKeys: directoryRuleLabelKeys,
         normalize: DirectoryRule.normalizeDirectoryRule,
         dirtyField: 'directory.rule',
-        afterSelect: updateDirectoryPreview
+        afterSelect: () => {
+          updateDirectoryPreview();
+          updateLocalCopyEditor();
+        }
+      };
+    }
+    if (name === 'localFilename') {
+      return {
+        input: elements.localFilenameRule,
+        select: elements.localFilenameRuleSelect,
+        trigger: elements.localFilenameRuleTrigger,
+        valueElement: elements.localFilenameRuleValue,
+        optionsElement: elements.localFilenameRuleOptions,
+        optionElements: localFilenameRuleOptionElements,
+        labelKeys: localFilenameRuleLabelKeys,
+        normalize: normalizeLocalFilenameRule,
+        dirtyField: 'localCopy.filename.rule',
+        afterSelect: updateLocalCopyEditor
+      };
+    }
+    if (name === 'localDirectory') {
+      return {
+        input: elements.localDirectoryRule,
+        select: elements.localDirectoryRuleSelect,
+        trigger: elements.localDirectoryRuleTrigger,
+        valueElement: elements.localDirectoryRuleValue,
+        optionsElement: elements.localDirectoryRuleOptions,
+        optionElements: localDirectoryRuleOptionElements,
+        labelKeys: localDirectoryRuleLabelKeys,
+        normalize: normalizeLocalDirectoryRule,
+        dirtyField: 'localCopy.directory.rule',
+        afterSelect: updateLocalCopyEditor
       };
     }
     return null;
+  }
+
+  function normalizeLocalFilenameRule(value) {
+    return value === 'webdav' ? 'webdav' : FilenameRule.normalizeFilenameRule(value);
+  }
+
+  function normalizeLocalDirectoryRule(value) {
+    return value === 'webdav' ? 'webdav' : DirectoryRule.normalizeDirectoryRule(value);
   }
 
   function setRuleSelectValue(name, value) {
@@ -925,13 +1139,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function isAnySaveSettingsSelectOpen() {
-    return isImageFormatSelectOpen() || isRuleSelectOpen('filename') || isRuleSelectOpen('directory');
+    return isImageFormatSelectOpen()
+      || isRuleSelectOpen('filename')
+      || isRuleSelectOpen('directory')
+      || isRuleSelectOpen('localDirectory')
+      || isRuleSelectOpen('localFilename');
   }
 
   function closeOpenSaveSettingsSelect({ restoreFocus = false } = {}) {
     if (isImageFormatSelectOpen()) closeImageFormatSelect({ restoreFocus });
     if (isRuleSelectOpen('filename')) closeRuleSelect('filename', { restoreFocus });
     if (isRuleSelectOpen('directory')) closeRuleSelect('directory', { restoreFocus });
+    if (isRuleSelectOpen('localDirectory')) closeRuleSelect('localDirectory', { restoreFocus });
+    if (isRuleSelectOpen('localFilename')) closeRuleSelect('localFilename', { restoreFocus });
   }
 
   function openRuleSelect(name, { focusSelected = false } = {}) {
@@ -940,6 +1160,8 @@ document.addEventListener('DOMContentLoaded', () => {
     closeImageFormatSelect();
     if (name !== 'filename') closeRuleSelect('filename');
     if (name !== 'directory') closeRuleSelect('directory');
+    if (name !== 'localDirectory') closeRuleSelect('localDirectory');
+    if (name !== 'localFilename') closeRuleSelect('localFilename');
 
     config.select.classList.add('is-open');
     config.optionsElement.classList.remove('hidden');
@@ -1020,6 +1242,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function openImageFormatSelect({ focusSelected = false } = {}) {
     closeRuleSelect('filename');
     closeRuleSelect('directory');
+    closeRuleSelect('localDirectory');
+    closeRuleSelect('localFilename');
     elements.imageFormatSelect?.classList.add('is-open');
     elements.imageFormatOptions?.classList.remove('hidden');
     elements.imageFormatTrigger?.setAttribute('aria-expanded', 'true');
@@ -1113,8 +1337,9 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.filenameTemplateError.textContent = invalid ? effectiveValidation.error : '';
       elements.filenameTemplateError.classList.toggle('hidden', !invalid);
     }
-    if (elements.saveSaveSettingsBtn && !isSaving) elements.saveSaveSettingsBtn.disabled = invalid;
     updateFilenamePreview({ invalid });
+    updateLocalCopyPreview();
+    updateSaveSettingsValidity();
     return effectiveValidation;
   }
 
@@ -1188,6 +1413,175 @@ document.addEventListener('DOMContentLoaded', () => {
       now: new Date(2026, 7, 20, 14, 35, 9)
     });
     elements.directoryPreview.textContent = preview.folder;
+    updateLocalCopyPreview();
+  }
+
+  function currentLocalCopyDraft() {
+    return {
+      enabled: Boolean(elements.localCopyEnabled?.checked),
+      folderName: (elements.localFolderName?.value || '').trim(),
+      directory: {
+        rule: normalizeLocalDirectoryRule(elements.localDirectoryRule?.value)
+      },
+      filename: {
+        rule: normalizeLocalFilenameRule(elements.localFilenameRule?.value),
+        customTemplate: elements.localFilenameTemplate?.value || FilenameRule.DEFAULT_CUSTOM_TEMPLATE
+      }
+    };
+  }
+
+  function setLocalFolderError(message) {
+    if (!elements.localFolderError) return;
+    elements.localFolderError.textContent = message || '';
+    elements.localFolderError.classList.toggle('hidden', !message);
+  }
+
+  function updateSaveSettingsValidity() {
+    if (!elements.saveSaveSettingsBtn || isSaving) return;
+    const filenameRule = FilenameRule.normalizeFilenameRule(elements.filenameRule?.value);
+    const filenameInvalid = filenameRule === 'custom'
+      && elements.filenameTemplate?.getAttribute('aria-invalid') === 'true';
+    const localDraft = currentLocalCopyDraft();
+    const localInvalid = localDraft.enabled
+      && localDraft.filename.rule === 'custom'
+      && elements.localFilenameTemplate?.getAttribute('aria-invalid') === 'true';
+    elements.saveSaveSettingsBtn.disabled = Boolean(filenameInvalid || localInvalid);
+  }
+
+  function updateLocalCopyEditor() {
+    const enabled = Boolean(elements.localCopyEnabled?.checked);
+    elements.localCopyFields?.toggleAttribute('hidden', !enabled);
+    const filenameRule = normalizeLocalFilenameRule(elements.localFilenameRule?.value);
+    const isCustom = filenameRule === 'custom';
+    elements.localFilenameTemplateGroup?.toggleAttribute('hidden', !isCustom);
+    elements.localFilenameTemplateGroup?.classList.toggle('hidden', !isCustom);
+    const template = elements.localFilenameTemplate?.value || '';
+    const validation = localizeFilenameValidation(FilenameRule.validateTemplate(template.trim()));
+    const localFilenameUntouched = !dirtySaveSettingsFields.has('localCopy.filename.rule')
+      && !dirtySaveSettingsFields.has('localCopy.filename.customTemplate');
+    const persistedLocal = persistedSaveSettings.localCopy || LocalCopy.createDefaultLocalCopy();
+    const preservesFutureLocalFilename = persistedSaveSettings.schemaVersion > currentSettingsSchemaVersion
+      && localFilenameUntouched
+      && filenameRule === normalizeLocalFilenameRule(persistedLocal.filename?.rule)
+      && template === String(persistedLocal.filename?.customTemplate ?? '');
+    const effectiveValidation = isCustom && preservesFutureLocalFilename
+      ? { valid: true, error: '' }
+      : validation;
+    const invalid = enabled && isCustom && !effectiveValidation.valid;
+
+    if (elements.localFilenameTemplate) {
+      elements.localFilenameTemplate.setAttribute('aria-invalid', String(invalid));
+      elements.localFilenameTemplate.classList.toggle('is-invalid', invalid);
+    }
+    elements.localFilenameTemplateGroup?.classList.toggle('has-error', invalid);
+    if (elements.localFilenameTemplateError) {
+      elements.localFilenameTemplateError.textContent = invalid ? effectiveValidation.error : '';
+      elements.localFilenameTemplateError.classList.toggle('hidden', !invalid);
+    }
+    updateLocalCopyPreview({ invalid });
+    updateSaveSettingsValidity();
+    return effectiveValidation;
+  }
+
+  function handleLocalFilenameTemplateInput() {
+    dirtySaveSettingsFields.add('localCopy.filename.customTemplate');
+    updateLocalCopyEditor();
+  }
+
+  function insertLocalFilenameVariable(variable) {
+    if (isSaving || !FilenameRule.TEMPLATE_VARIABLES.includes(variable) || !elements.localFilenameTemplate) return;
+    const input = elements.localFilenameTemplate;
+    const token = `{${variable}}`;
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+    input.value = `${input.value.slice(0, start)}${token}${input.value.slice(end)}`;
+    const caret = start + token.length;
+    handleLocalFilenameTemplateInput();
+    input.focus();
+    input.setSelectionRange?.(caret, caret);
+  }
+
+  function updateLocalCopyPreview({ invalid = false } = {}) {
+    if (!elements.localCopyPreview) return;
+    const draft = currentLocalCopyDraft();
+    const inheritedFilenameInvalid = draft.filename.rule === 'webdav'
+      && elements.filenameTemplate?.getAttribute('aria-invalid') === 'true';
+    const previewInvalid = invalid || inheritedFilenameInvalid;
+    elements.localCopyPreview.classList.toggle('is-invalid', previewInvalid);
+    if (previewInvalid) {
+      elements.localCopyPreview.textContent = t('localCopyPreviewUnavailable');
+      return;
+    }
+    const plan = LocalCopy.resolveLocalSave({
+      localCopy: { ...draft, enabled: true, folderName: draft.folderName || 'Folder' },
+      webdavDirectoryRule: DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value),
+      webdavFilenameRule: {
+        rule: FilenameRule.normalizeFilenameRule(elements.filenameRule?.value),
+        customTemplate: elements.filenameTemplate?.value || FilenameRule.DEFAULT_CUSTOM_TEMPLATE
+      },
+      imageUrl: 'https://cdn.example.net/photos/sunset.png',
+      pageUrl: 'https://www.example.com/article',
+      pageTitle: 'Summer trip',
+      width: 1920,
+      height: 1080,
+      extension: 'jpg',
+      now: new Date(2026, 7, 20, 14, 35, 9)
+    });
+    if (plan.skip) {
+      elements.localCopyPreview.textContent = t('localFolderPlaceholder');
+      return;
+    }
+    elements.localCopyPreview.textContent = `${plan.folderName}/${plan.relativePath}`.replace(/\/+/g, '/');
+  }
+
+  async function handleLocalCopyEnabledChange() {
+    if (isSaving) return;
+    dirtySaveSettingsFields.add('localCopy.enabled');
+    if (elements.localCopyEnabled?.checked && !(elements.localFolderName?.value || '').trim()) {
+      const picked = await chooseLocalFolder({ requireSelection: true });
+      if (!picked && elements.localCopyEnabled) elements.localCopyEnabled.checked = false;
+    }
+    updateLocalCopyEditor();
+  }
+
+  async function chooseLocalFolder({ requireSelection = false } = {}) {
+    if (isSaving) return false;
+    if (typeof window.showDirectoryPicker !== 'function') {
+      setLocalFolderError(t('localFolderPickerUnavailable'));
+      showNotification(localizedMessage('localFolderPickerUnavailable'), 'error');
+      return false;
+    }
+
+    try {
+      const handle = await window.showDirectoryPicker({
+        id: 'webdav-image-saver-local-copy',
+        mode: 'readwrite',
+        startIn: 'pictures'
+      });
+      const permission = typeof handle.requestPermission === 'function'
+        ? await handle.requestPermission({ mode: 'readwrite' })
+        : 'granted';
+      if (permission !== 'granted') {
+        setLocalFolderError(t('localFolderPermissionDenied'));
+        showNotification(localizedMessage('localFolderPermissionDenied'), 'error');
+        return false;
+      }
+      pendingLocalDirectoryHandle = handle;
+      if (elements.localFolderName) elements.localFolderName.value = handle.name || '';
+      dirtySaveSettingsFields.add('localCopy.folderName');
+      setLocalFolderError('');
+      updateLocalCopyEditor();
+      return true;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        if (requireSelection) setLocalFolderError(t('localFolderRequired'));
+        return false;
+      }
+      console.error('Failed to choose local folder:', error);
+      setLocalFolderError(t('localFolderPickerUnavailable'));
+      showNotification(localizedMessage('localFolderPickerUnavailable'), 'error');
+      return false;
+    }
   }
 
   async function saveSaveSettings(event) {
@@ -1199,10 +1593,25 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.filenameTemplate?.focus();
       return;
     }
+    const localCopyValidation = updateLocalCopyEditor();
+    const localCopyDraft = currentLocalCopyDraft();
+    if (localCopyDraft.enabled && !localCopyDraft.folderName) {
+      setLocalFolderError(t('localFolderRequired'));
+      activateSaveSettingsTab('local', { focus: true });
+      elements.chooseLocalFolderBtn?.focus();
+      showNotification(localizedMessage('localFolderRequired'), 'error');
+      return;
+    }
+    if (localCopyDraft.enabled && localCopyDraft.filename.rule === 'custom' && !localCopyValidation.valid) {
+      activateSaveSettingsTab('local', { focus: true });
+      elements.localFilenameTemplate?.focus();
+      return;
+    }
 
     const selectedPreference = ImageFormat.normalizeFormatPreference(elements.imageFormatPreference?.value);
     const customTemplate = (elements.filenameTemplate?.value || '').trim() || FilenameRule.DEFAULT_CUSTOM_TEMPLATE;
     const directoryRule = DirectoryRule.normalizeDirectoryRule(elements.directoryRule?.value);
+    const localCustomTemplate = (elements.localFilenameTemplate?.value || '').trim() || FilenameRule.DEFAULT_CUSTOM_TEMPLATE;
     const completeUpdate = {
       image: {
         saveFormat: selectedPreference
@@ -1213,6 +1622,17 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       directory: {
         rule: directoryRule
+      },
+      localCopy: {
+        enabled: localCopyDraft.enabled,
+        folderName: localCopyDraft.folderName,
+        directory: {
+          rule: localCopyDraft.directory.rule
+        },
+        filename: {
+          rule: localCopyDraft.filename.rule,
+          customTemplate: localCustomTemplate
+        }
       }
     };
     const isFutureSchema = persistedSaveSettings.schemaVersion > currentSettingsSchemaVersion;
@@ -1224,6 +1644,10 @@ document.addEventListener('DOMContentLoaded', () => {
       isSaving = true;
       ++saveSettingsRevision;
       setSaveSettingsBusy(true);
+      if (pendingLocalDirectoryHandle && typeof LocalCopyFs?.saveDirectoryHandle === 'function') {
+        await LocalCopyFs.saveDirectoryHandle(pendingLocalDirectoryHandle);
+        pendingLocalDirectoryHandle = null;
+      }
       const settings = await AppSettings.updateSettings(chrome.storage.local, settingsUpdate);
       persistedSaveSettings = copySaveSettings(settings);
       isSaving = false;
@@ -1260,6 +1684,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dirtySaveSettingsFields.has('directory.rule')) {
       update.directory = { rule: completeUpdate.directory.rule };
     }
+
+    const localCopyUpdate = {};
+    if (dirtySaveSettingsFields.has('localCopy.enabled')) {
+      localCopyUpdate.enabled = completeUpdate.localCopy.enabled;
+    }
+    if (dirtySaveSettingsFields.has('localCopy.folderName')) {
+      localCopyUpdate.folderName = completeUpdate.localCopy.folderName;
+    }
+    if (dirtySaveSettingsFields.has('localCopy.directory.rule')) {
+      localCopyUpdate.directory = { rule: completeUpdate.localCopy.directory.rule };
+    }
+    const localFilenameUpdate = {};
+    if (dirtySaveSettingsFields.has('localCopy.filename.rule')) {
+      localFilenameUpdate.rule = completeUpdate.localCopy.filename.rule;
+    }
+    if (dirtySaveSettingsFields.has('localCopy.filename.customTemplate')) {
+      localFilenameUpdate.customTemplate = completeUpdate.localCopy.filename.customTemplate;
+    }
+    if (Object.keys(localFilenameUpdate).length > 0) localCopyUpdate.filename = localFilenameUpdate;
+    if (Object.keys(localCopyUpdate).length > 0) update.localCopy = localCopyUpdate;
     return update;
   }
 
