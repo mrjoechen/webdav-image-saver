@@ -10,9 +10,10 @@ const FilenameRule = require('../filename-rule.js');
 const DirectoryRule = require('../directory-rule.js');
 const LocalCopy = require('../local-copy.js');
 const LocalCopyFs = require('../local-copy-fs.js');
+const BatchSave = require('../batch-save.js');
 
 const backgroundSource = readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
-const testExport = ';globalThis.__backgroundWebdavTest = { ensureWebdavDirectories, resetWebdavDirectoryCache, uploadImage, configReady, setPersistLocalCopy, saveLocalCopyOfUpload };';
+const testExport = ';globalThis.__backgroundWebdavTest = { ensureWebdavDirectories, resetWebdavDirectoryCache, uploadImage, configReady, setPersistLocalCopy, saveLocalCopyOfUpload, saveImageCore, getBatchPanelContext, scanBatchTab, startBatch, getBatch, runBatch, cancelBatch, retryFailedBatch, resumePersistedBatches, setSaveImageCore };';
 
 function response(status, statusText = '', body = '') {
   return {
@@ -34,20 +35,43 @@ async function waitFor(check, message = 'condition was not met') {
   assert.fail(message);
 }
 
+function createMemoryStorage(initial = {}) {
+  const values = { ...initial };
+  return {
+    async get(key) {
+      if (key == null) return { ...values };
+      if (typeof key === 'string') return Object.hasOwn(values, key) ? { [key]: values[key] } : {};
+      if (Array.isArray(key)) {
+        return Object.fromEntries(key.filter(name => Object.hasOwn(values, name)).map(name => [name, values[name]]));
+      }
+      return { ...key, ...Object.fromEntries(Object.keys(key).filter(name => Object.hasOwn(values, name)).map(name => [name, values[name]])) };
+    },
+    async set(update) { Object.assign(values, update); },
+    async remove(keys) {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
+    }
+  };
+}
+
 async function createWorker(fetchImpl, options = {}) {
   const noopEvent = { addListener() {} };
+  let runtimeMessageListener;
   const sentMessages = options.sentMessages || [];
-  const storageArea = {
-    get: async () => ({}),
-    set: async () => {},
-    remove: async () => {}
-  };
+  const localStorage = options.localStorage || createMemoryStorage(
+    options.servers ? { webdavServers: options.servers } : {}
+  );
+  const syncStorage = options.syncStorage || createMemoryStorage();
+  const sessionStorage = options.session || createMemoryStorage();
+  const scriptExecutions = options.scriptExecutions || [];
+  const insertedCss = options.insertedCss || [];
   const context = {
     importScripts() {},
     fetch: fetchImpl,
     Headers,
     TextEncoder,
     URL,
+    AbortController,
+    DOMException,
     crypto: options.crypto || webcrypto,
     btoa(value) { return Buffer.from(value, 'binary').toString('base64'); },
     console: { log() {}, warn() {}, error() {} },
@@ -60,10 +84,11 @@ async function createWorker(fetchImpl, options = {}) {
     DirectoryRule: options.DirectoryRule || {},
     LocalCopy: options.LocalCopy || { resolveLocalSave: () => ({ skip: true, reason: 'disabled' }) },
     LocalCopyFs: options.LocalCopyFs || LocalCopyFs,
+    BatchSave,
     chrome: {
       runtime: {
         onInstalled: noopEvent,
-        onMessage: noopEvent,
+        onMessage: { addListener(listener) { runtimeMessageListener = listener; } },
         openOptionsPage() {},
         getURL: path => `chrome-extension://test/${path}`,
         getContexts: async () => [],
@@ -76,14 +101,24 @@ async function createWorker(fetchImpl, options = {}) {
       },
       contextMenus: { onClicked: noopEvent, removeAll(callback) { callback(); }, create(_item, callback) { callback?.(); } },
       action: { onClicked: noopEvent },
+      sidePanel: {
+        setPanelBehavior: options.setPanelBehavior || (async () => undefined)
+      },
       tabs: {
         onRemoved: noopEvent,
+        query: options.tabsQuery || (async () => [{ id: 7, url: 'https://page.example/article', title: 'Article' }]),
         sendMessage: async (tabId, message) => {
           sentMessages.push({ tabId, message });
+          if (typeof options.tabMessageHandler === 'function') {
+            return options.tabMessageHandler(tabId, message);
+          }
         }
       },
-      scripting: { insertCSS: async () => {}, executeScript: async () => {} },
-      storage: { local: storageArea, sync: storageArea, session: storageArea }
+      scripting: {
+        insertCSS: async details => { insertedCss.push(details); },
+        executeScript: async details => { scriptExecutions.push(details); }
+      },
+      storage: { local: localStorage, sync: syncStorage, session: sessionStorage }
     }
   };
   context.globalThis = context;
@@ -92,10 +127,473 @@ async function createWorker(fetchImpl, options = {}) {
   if (typeof options.persistLocalCopy === 'function') {
     context.__backgroundWebdavTest.setPersistLocalCopy(options.persistLocalCopy);
   }
-  return context.__backgroundWebdavTest;
+  const api = context.__backgroundWebdavTest;
+  api.dispatchRuntimeMessage = (message, sender = {
+    url: 'chrome-extension://test/sidepanel/sidepanel.html'
+  }) => new Promise(resolve => {
+    const handled = runtimeMessageListener(message, sender, resolve);
+    if (handled !== true) resolve({ success: false, error: 'Message was not handled.' });
+  });
+  return api;
 }
 
 const server = { url: 'https://dav.example/webdav', username: 'alice', password: 'secret' };
+
+test('batch panel context omits WebDAV credentials and returns save preferences', async () => {
+  const settings = {
+    image: { saveFormat: 'ask' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'fixed' },
+    localCopy: { enabled: false }
+  };
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    servers: [{
+      id: 'server-1',
+      name: 'My NAS',
+      folder: '/Images',
+      url: 'https://dav.example/webdav',
+      username: 'alice',
+      password: 'secret'
+    }],
+    settings
+  });
+
+  const context = await worker.getBatchPanelContext({
+    id: 7,
+    url: 'https://page.example/article',
+    title: 'Article'
+  });
+
+  assert.equal(context.tab.id, 7);
+  assert.equal(context.servers.length, 1);
+  assert.equal(context.servers[0].id, 'server-1');
+  assert.equal(context.servers[0].name, 'My NAS');
+  assert.equal(context.servers[0].folder, '/Images');
+  assert.equal(Object.hasOwn(context.servers[0], 'username'), false);
+  assert.equal(Object.hasOwn(context.servers[0], 'password'), false);
+  assert.equal(JSON.stringify(context).includes('secret'), false);
+  assert.equal(context.settings.image.saveFormat, 'ask');
+  assert.equal(context.activeBatch, null);
+});
+
+test('batch scan injects discovery before the content script and persists its result', async () => {
+  const session = createMemoryStorage();
+  const scriptExecutions = [];
+  const insertedCss = [];
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    scriptExecutions,
+    insertedCss,
+    tabMessageHandler: async (_tabId, message) => {
+      if (message.action === 'ping') throw new Error('no receiver');
+      if (message.action === 'batchPage:collectImages') {
+        return {
+          success: true,
+          pageUrl: 'https://page.example/article',
+          pageTitle: 'Article',
+          images: [{ id: 'image-0', url: 'https://cdn.example/photo.jpg', name: 'photo.jpg', width: 1600, height: 900 }]
+        };
+      }
+      throw new Error(`Unexpected message: ${message.action}`);
+    }
+  });
+
+  const result = await worker.scanBatchTab({
+    id: 7,
+    url: 'https://page.example/article',
+    title: 'Article'
+  });
+
+  assert.match(result.scanId, /^scan_/);
+  assert.equal(result.tabId, 7);
+  assert.equal(result.images.length, 1);
+  assert.deepEqual(Array.from(scriptExecutions[0].files), ['image-discovery.js', 'content_script.js']);
+  assert.deepEqual(Array.from(insertedCss[0].files), ['assets/bubble.css']);
+  const stored = await session.get('batchScan_7');
+  assert.equal(stored.batchScan_7.scanId, result.scanId);
+  assert.equal(stored.batchScan_7.images[0].url, 'https://cdn.example/photo.jpg');
+});
+
+test('batch scan rejects restricted pages before attempting injection', async () => {
+  const scriptExecutions = [];
+  const worker = await createWorker(async () => response(200, 'OK'), { scriptExecutions });
+
+  await assert.rejects(
+    worker.scanBatchTab({ id: 9, url: 'chrome://settings', title: 'Settings' }),
+    /does not allow image scanning/i
+  );
+  assert.equal(scriptExecutions.length, 0);
+});
+
+function batchScan(images = [
+  { id: 'image-1', url: 'https://cdn.example/one.jpg', name: 'one.jpg', width: 1200, height: 800 },
+  { id: 'image-2', url: 'https://cdn.example/two.jpg', name: 'two.jpg', width: 1600, height: 900 }
+]) {
+  return {
+    scanId: 'scan-1',
+    tabId: 7,
+    pageUrl: 'https://page.example/article',
+    pageTitle: 'Article',
+    createdAt: 1000,
+    images
+  };
+}
+
+const batchServer = {
+  id: 'server-1',
+  name: 'My NAS',
+  folder: '/Images',
+  url: 'https://dav.example/webdav',
+  username: 'alice',
+  password: 'secret'
+};
+
+const batchSettings = {
+  image: { saveFormat: 'original' },
+  filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+  directory: { rule: 'fixed' },
+  localCopy: { enabled: false }
+};
+
+test('batch start validates the latest scan and persists only selected images in scan order', async () => {
+  const session = createMemoryStorage({ batchScan_7: batchScan() });
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  worker.setSaveImageCore(async ({ allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'saved.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+
+  await assert.rejects(worker.startBatch({
+    scanId: 'stale-scan', tabId: 7, imageIds: ['image-1'], serverId: 'server-1', targetFormat: 'original'
+  }), /scan.*no longer current/i);
+  await assert.rejects(worker.startBatch({
+    scanId: 'scan-1', tabId: 7, imageIds: ['missing'], serverId: 'server-1', targetFormat: 'original'
+  }), /selected image.*no longer available/i);
+
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-2'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  await worker.runBatch(started.batchId);
+  const stored = await worker.getBatch(started.batchId);
+
+  assert.deepEqual(stored.items.map(item => item.id), ['image-2']);
+  assert.equal(stored.serverName, 'My NAS');
+  assert.equal(stored.settings.filename.rule, 'original');
+  assert.equal(stored.state, 'completed');
+});
+
+test('batch scheduler continues after failures and reserves duplicate filenames', async () => {
+  const session = createMemoryStorage({ batchScan_7: batchScan() });
+  const sentMessages = [];
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings,
+    sentMessages
+  });
+  worker.setSaveImageCore(async ({ imageUrl, allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'photo.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    if (imageUrl.endsWith('/two.jpg')) throw new Error('WebDAV unavailable');
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-1', 'image-2'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  const finished = await worker.runBatch(started.batchId);
+
+  assert.equal(finished.state, 'completed');
+  assert.deepEqual(finished.items.map(item => item.state), ['success', 'failed']);
+  assert.deepEqual(finished.items.map(item => item.filename), ['photo.jpg', 'photo_2.jpg']);
+  assert.equal(finished.summary.completed, 2);
+  assert.ok(sentMessages.some(entry => entry.message.action === 'batchPage:showProgress'));
+  assert.ok(sentMessages.some(entry => entry.message.action === 'batchPage:showSummary'));
+});
+
+test('batch cancellation aborts active work and cancels queued items', async () => {
+  const session = createMemoryStorage({
+    batchScan_7: batchScan(Array.from({ length: 5 }, (_, index) => ({
+      id: `image-${index}`,
+      url: `https://cdn.example/${index}.jpg`,
+      name: `${index}.jpg`
+    })))
+  });
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  let active = 0;
+  let maximum = 0;
+  worker.setSaveImageCore(async ({ signal }) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    try {
+      await new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      });
+    } finally {
+      active -= 1;
+    }
+  });
+
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-0', 'image-1', 'image-2', 'image-3', 'image-4'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  const completion = worker.runBatch(started.batchId);
+  await waitFor(() => active === 3, 'three batch items did not start');
+  await worker.cancelBatch(started.batchId);
+  const finished = await completion;
+
+  assert.equal(maximum, 3);
+  assert.equal(finished.state, 'cancelled');
+  assert.equal(finished.summary.cancelled, 5);
+});
+
+test('retry reuses allocated filenames and only runs failed items', async () => {
+  const session = createMemoryStorage({ batchScan_7: batchScan() });
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  const attempts = new Map();
+  worker.setSaveImageCore(async ({ imageUrl, allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'photo.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    const count = (attempts.get(imageUrl) || 0) + 1;
+    attempts.set(imageUrl, count);
+    if (imageUrl.endsWith('/two.jpg') && count === 1) throw new Error('Temporary failure');
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+
+  const started = await worker.startBatch({
+    scanId: 'scan-1', tabId: 7, imageIds: ['image-1', 'image-2'], serverId: 'server-1', targetFormat: 'original'
+  });
+  const first = await worker.runBatch(started.batchId);
+  assert.deepEqual(first.items.map(item => item.state), ['success', 'failed']);
+  assert.deepEqual(first.items.map(item => item.filename), ['photo.jpg', 'photo_2.jpg']);
+
+  await worker.retryFailedBatch(started.batchId);
+  const retried = await worker.runBatch(started.batchId);
+  assert.deepEqual(retried.items.map(item => item.state), ['success', 'success']);
+  assert.deepEqual(retried.items.map(item => item.filename), ['photo.jpg', 'photo_2.jpg']);
+  assert.equal(attempts.get('https://cdn.example/one.jpg'), 1);
+  assert.equal(attempts.get('https://cdn.example/two.jpg'), 2);
+});
+
+test('runtime batch commands accept the Side Panel and reject page senders', async () => {
+  const session = createMemoryStorage({ batchScan_7: batchScan() });
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  worker.setSaveImageCore(async ({ allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'saved.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+  const command = {
+    action: 'batchPanel:start',
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-1'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  };
+
+  const rejected = await worker.dispatchRuntimeMessage(command, {
+    url: 'https://page.example/article',
+    tab: { id: 7 }
+  });
+  assert.equal(rejected.success, false);
+  assert.match(rejected.error, /side panel/i);
+
+  const accepted = await worker.dispatchRuntimeMessage(command);
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.batch.items.length, 1);
+  await worker.runBatch(accepted.batch.batchId);
+});
+
+test('worker recovery requeues interrupted uploads and preserves their allocated filename', async () => {
+  const session = createMemoryStorage();
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session,
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  worker.setSaveImageCore(async ({ allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'new-name.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+  const created = BatchSave.createBatch({
+    batchId: 'resume-1',
+    tabId: 7,
+    pageUrl: 'https://page.example/article',
+    pageTitle: 'Article',
+    serverId: 'server-1',
+    serverName: 'My NAS',
+    targetFormat: 'original',
+    settings: batchSettings,
+    images: [{ id: 'image-1', url: 'https://cdn.example/one.jpg', name: 'one.jpg' }]
+  });
+  const interrupted = {
+    ...created,
+    state: 'running',
+    items: [{
+      ...created.items[0],
+      state: 'uploading',
+      filename: 'reserved.jpg',
+      allocatedFolder: '/Images'
+    }]
+  };
+  await session.set({
+    'batch_resume-1': interrupted,
+    activeBatchForTab_7: interrupted.batchId
+  });
+
+  await worker.resumePersistedBatches();
+  const finished = await worker.runBatch('resume-1');
+
+  assert.equal(finished.state, 'completed');
+  assert.equal(finished.items[0].state, 'success');
+  assert.equal(finished.items[0].filename, 'reserved.jpg');
+});
+
+test('shared save core returns a result without sending a page status message', async () => {
+  const sentMessages = [];
+  const sourceBlob = new Blob(['image'], { type: 'image/jpeg' });
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'fixed' },
+    localCopy: { enabled: false }
+  };
+  const worker = await createWorker(async (_url, options) => {
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => sourceBlob };
+    }
+    return response(201, 'Created');
+  }, {
+    settings,
+    ImageFormat,
+    FilenameRule,
+    DirectoryRule,
+    sentMessages
+  });
+
+  const result = await worker.saveImageCore({
+    imageUrl: 'https://cdn.example/photo.png',
+    pageUrl: 'https://page.example/post',
+    pageTitle: 'Post',
+    serverConfig: server,
+    targetFormat: 'original',
+    settings,
+    now: new Date(2026, 7, 26, 12, 0, 0)
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.message, 'Saved as "photo.jpg"');
+  assert.equal(result.filename, 'photo.jpg');
+  assert.equal(result.folder, '/');
+  assert.deepEqual(Array.from(result.warningCodes), []);
+  assert.equal(sentMessages.length, 0);
+});
+
+test('shared save core uses frozen settings, allocated target, callbacks, and abort signal', async () => {
+  const requests = [];
+  const targets = [];
+  const sourceBlob = new Blob(['image'], { type: 'image/jpeg' });
+  const controller = new AbortController();
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'fixed' },
+    localCopy: { enabled: false }
+  };
+  const worker = await createWorker(async (url, options) => {
+    requests.push({ url, options });
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => sourceBlob };
+    }
+    return response(201, 'Created');
+  }, { settings, ImageFormat, FilenameRule, DirectoryRule });
+
+  const result = await worker.saveImageCore({
+    imageUrl: 'https://cdn.example/photo.jpg',
+    pageUrl: 'https://page.example/post',
+    pageTitle: 'Post',
+    serverConfig: server,
+    targetFormat: 'original',
+    settings,
+    now: new Date(2026, 7, 26, 12, 0, 0),
+    signal: controller.signal,
+    allocateFilename(folder, filename) {
+      assert.equal(folder, '/');
+      assert.equal(filename, 'photo.jpg');
+      return 'photo_2.jpg';
+    },
+    async onTargetResolved(target) {
+      targets.push(target);
+    }
+  });
+
+  const put = requests.find(request => request.options?.method === 'PUT');
+  assert.equal(requests[0].options.signal, controller.signal);
+  assert.equal(put.options.signal, controller.signal);
+  assert.equal(put.url, 'https://dav.example/webdav/photo_2.jpg');
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].folder, '/');
+  assert.equal(targets[0].filename, 'photo_2.jpg');
+  assert.equal(result.filename, 'photo_2.jpg');
+});
+
+test('shared save core rejects WebDAV failures instead of converting them to page messages', async () => {
+  const sentMessages = [];
+  const settings = {
+    image: { saveFormat: 'original' },
+    filename: { rule: 'original', customTemplate: '{originalName}.{ext}' },
+    directory: { rule: 'fixed' },
+    localCopy: { enabled: false }
+  };
+  const worker = await createWorker(async (_url, options) => {
+    if (!options?.method) {
+      return { ok: true, status: 200, statusText: 'OK', blob: async () => new Blob(['image'], { type: 'image/jpeg' }) };
+    }
+    return response(403, 'Forbidden');
+  }, { settings, ImageFormat, FilenameRule, DirectoryRule, sentMessages });
+
+  await assert.rejects(worker.saveImageCore({
+    imageUrl: 'https://cdn.example/photo.jpg',
+    pageUrl: 'https://page.example/post',
+    pageTitle: 'Post',
+    serverConfig: server,
+    targetFormat: 'original',
+    settings
+  }), /Upload failed: 403 Forbidden/);
+  assert.equal(sentMessages.length, 0);
+});
 
 test('creates nested WebDAV collections parent first with credentials', async () => {
   const requests = [];

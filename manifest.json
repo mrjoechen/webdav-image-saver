@@ -1,14 +1,16 @@
 {
     "manifest_version": 3,
+    "minimum_chrome_version": "114",
     "name": "WebDAV Image Saver",
     "version": "1.1.0",
-    "description": "Save web images to your WebDAV server by right-click. Supports multiple servers and local credentials.",
+    "description": "Save one image or batch-save page images to your WebDAV server with configurable naming and folders.",
     "author": "WebDAV Image Saver Team",
     "homepage_url": "https://github.com/mrjoechen/webdav-image-saver",
     "permissions": [
       "contextMenus",
       "storage",
-      "scripting"
+      "scripting",
+      "sidePanel"
     ],
     "host_permissions": [
       "<all_urls>"
@@ -17,7 +19,11 @@
       "service_worker": "background.js"
     },
     "options_page": "options/options.html",
+    "side_panel": {
+      "default_path": "sidepanel/sidepanel.html"
+    },
     "action": {
+      "default_title": "Batch save page images",
       "default_icon": {
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",

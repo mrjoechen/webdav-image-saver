@@ -197,6 +197,52 @@
       animation: countdownFadeIn 0.5s ease-out forwards;
   }
 
+  .webdav-batch-status {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 2147483647;
+      width: min(320px, calc(100vw - 40px));
+      padding: 14px 16px;
+      color: white;
+      background: rgba(32, 35, 42, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      font-size: 14px;
+      animation: countdownFadeIn 0.25s ease-out forwards;
+  }
+
+  .webdav-batch-status p {
+      margin: 0 0 10px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+  }
+
+  .webdav-batch-progress {
+      height: 6px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+  }
+
+  .webdav-batch-progress > span {
+      display: block;
+      height: 100%;
+      background: #78a8ff;
+      border-radius: inherit;
+      transition: width 0.2s ease;
+  }
+
+  .webdav-batch-status.complete {
+      background: rgba(35, 126, 72, 0.97);
+  }
+
+  .webdav-batch-status.complete.has-errors {
+      background: rgba(165, 112, 15, 0.97);
+  }
+
   @media (max-width: 420px) {
     .webdav-format-chooser {
       top: 12px;
@@ -212,7 +258,12 @@
   @media (prefers-reduced-motion: reduce) {
     .webdav-saver-bubble,
     .webdav-format-chooser,
-    .webdav-saver-status-bubble {
+    .webdav-saver-status-bubble,
+    .webdav-batch-status {
       animation-duration: 1ms;
+    }
+
+    .webdav-batch-progress > span {
+      transition: none;
     }
   }

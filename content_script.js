@@ -4,6 +4,7 @@
     // Use an object to keep track of active countdowns/bubbles by their unique ID
     const activeBubbles = {};
     const activeFormatChoosers = {};
+    const batchStatusTimers = {};
 
     function sendRuntimeMessage(message, onFailure) {
       chrome.runtime.sendMessage(message).catch(error => {
@@ -186,6 +187,62 @@
             bubble.remove();
         }, 4000);
     }
+
+    function batchStatusId(batchId) {
+      return `webdav-batch-status-${String(batchId || '')}`;
+    }
+
+    function getOrCreateBatchStatus(batchId) {
+      const id = batchStatusId(batchId);
+      let bubble = document.getElementById(id);
+      if (bubble) return bubble;
+
+      bubble = document.createElement('section');
+      bubble.id = id;
+      bubble.className = 'webdav-batch-status';
+      bubble.setAttribute('role', 'status');
+      bubble.setAttribute('aria-live', 'polite');
+      document.body.appendChild(bubble);
+      return bubble;
+    }
+
+    function showBatchProgress(batch) {
+      if (!batch?.batchId || !batch.summary) return;
+      const bubble = getOrCreateBatchStatus(batch.batchId);
+      bubble.className = 'webdav-batch-status running';
+      bubble.textContent = '';
+
+      const label = document.createElement('p');
+      label.textContent = `Saving ${batch.summary.completed} of ${batch.summary.total} to “${batch.serverName || 'WebDAV'}”`;
+      const track = document.createElement('div');
+      track.className = 'webdav-batch-progress';
+      const fill = document.createElement('span');
+      const percent = batch.summary.total > 0
+        ? Math.round((batch.summary.completed / batch.summary.total) * 100)
+        : 0;
+      fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+      track.appendChild(fill);
+      bubble.append(label, track);
+    }
+
+    function showBatchSummary(batch) {
+      if (!batch?.batchId || !batch.summary) return;
+      const bubble = getOrCreateBatchStatus(batch.batchId);
+      const saved = (batch.summary.success || 0) + (batch.summary.warning || 0);
+      const failed = batch.summary.failed || 0;
+      const cancelled = batch.summary.cancelled || 0;
+      const details = [failed ? `${failed} failed` : '', cancelled ? `${cancelled} cancelled` : '']
+        .filter(Boolean)
+        .join('; ');
+      bubble.className = `webdav-batch-status complete${failed ? ' has-errors' : ''}`;
+      bubble.textContent = `Saved ${saved} of ${batch.summary.total}${details ? `; ${details}` : ''}.`;
+
+      clearTimeout(batchStatusTimers[batch.batchId]);
+      batchStatusTimers[batch.batchId] = setTimeout(() => {
+        bubble.remove();
+        delete batchStatusTimers[batch.batchId];
+      }, 8000);
+    }
   
   
     // Listen for messages from the background script
@@ -193,7 +250,10 @@
       console.log('Content script received message:', message);
       if (message.action === 'ping') {
         // Respond to ping to indicate script is present
-        sendResponse({ pong: true });
+        sendResponse({
+          pong: true,
+          batchDiscovery: typeof ImageDiscovery !== 'undefined'
+        });
         return true;
       } else if (message.action === 'showCountdownBubble') {
         showCountdownBubble(message.uploadId, message.serverName, message.countdownSeconds);
@@ -205,6 +265,22 @@
          removeBubble(message.uploadId); // Ensure countdown bubble is gone first
          removeFormatChooser(message.uploadId);
          showStatusBubble(message.status, message.message);
+      } else if (message.action === 'batchPage:collectImages') {
+         try {
+           const records = ImageDiscovery.collectImageRecords(document, window.matchMedia.bind(window));
+           sendResponse({
+             success: true,
+             pageUrl: location.href,
+             pageTitle: document.title,
+             images: ImageDiscovery.discoverImages(records, document.baseURI)
+           });
+         } catch (error) {
+           sendResponse({ success: false, error: error.message || String(error) });
+         }
+      } else if (message.action === 'batchPage:showProgress') {
+         showBatchProgress(message.batch);
+      } else if (message.action === 'batchPage:showSummary') {
+         showBatchSummary(message.batch);
       }
       // Indicate that the response function will not be called (or will be called asynchronously)
       // For simplicity here, we don't send responses back from most actions.

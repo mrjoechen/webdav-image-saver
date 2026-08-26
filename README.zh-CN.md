@@ -18,7 +18,7 @@
 
 ## Overview
 
-通过 Chrome 右键菜单，将网页图片直接保存到你自己的 WebDAV 服务器。
+通过 Chrome 右键菜单保存单张图片，或在扩展的 Side Panel 中批量保存当前网页图片到你自己的 WebDAV 服务器。
 
 WebDAV Image Saver 是一个 Manifest V3 Chrome 扩展，适合将图片保存到 Nextcloud、ownCloud、Synology、QNAP 或其他 WebDAV 兼容存储的用户。它没有任何开发者运营的服务器或托管后端，不会收集、保存或向开发者传输你的图片、凭据、浏览数据或设置。配置、图片获取、目录浏览和上传都在浏览器内完成，扩展数据保存在 Chrome 本地扩展存储中。
 
@@ -53,7 +53,7 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 
 **[安装 WebDAV Image Saver](https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep)**
 
-安装后，点击扩展图标配置你的 WebDAV 服务器。你也可以在 Chrome 的扩展程序菜单中固定该扩展，方便快速使用。
+安装后，点击扩展图标打开图片 Side Panel，再通过面板中的设置按钮配置 WebDAV 服务器。你也可以在 Chrome 的扩展程序菜单中固定该扩展，方便快速使用。
 
 ## 从 GitHub Releases 安装
 
@@ -64,7 +64,7 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 3. 打开右上角的 **开发者模式**。
 4. 将下载的 ZIP 文件直接拖到扩展程序页面进行安装。
 5. 如果当前浏览器不支持拖拽 ZIP 安装，也可以将 ZIP 解压到一个固定目录，点击 **加载已解压的扩展程序**，选择包含 `manifest.json` 的解压目录。
-6. 点击扩展图标配置你的 WebDAV 服务器。
+6. 点击扩展图标，再通过 Side Panel 中的设置按钮配置 WebDAV 服务器。
 
 通过 GitHub Releases 安装的扩展不会通过 Chrome Web Store 自动更新。升级时，请从最新 release 下载 ZIP 并重新安装；如果你使用的是解压目录安装，请替换已解压文件，然后在 `chrome://extensions` 中点击 WebDAV Image Saver 的 **重新加载**。
 
@@ -73,6 +73,10 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 ## 功能
 
 - 将任意右键点击的网页图片保存到已配置的 WebDAV 目标位置。
+- 点击扩展图标，在 Chrome Side Panel 中扫描当前网页并批量保存所选图片。
+- 对完全相同的图片 URL 去重，并优先选择页面 `srcset` 或 `<picture>` 中声明的最大图片候选。
+- Side Panel 显示逐项进度，网页显示紧凑进度和结果提示；支持取消进行中的批次以及重试失败项。
+- 单张和批量保存共用图片格式、文件命名、目录、WebDAV 和可选本地副本设置。
 - 支持配置多个 WebDAV 服务器。
 - 保存前可测试 WebDAV 连接。
 - 支持浏览多级 WebDAV 目录并选择目标文件夹。
@@ -84,7 +88,7 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 - 设置页面支持中英文切换。
 - 动图和浏览器不支持转换的图片会保留原格式，并显示明确提示。
 - 上传前显示短暂倒计时气泡，并支持取消。
-- 可从扩展工具栏图标打开设置页面。
+- 可从 Side Panel 打开设置页面。
 - 使用随包提供的 SVG 图标，设置界面支持浅色/深色单色主题。
 
 ## 开发安装
@@ -93,7 +97,7 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 2. 启用 **开发者模式**。
 3. 点击 **加载已解压的扩展程序**。
 4. 选择本仓库目录。
-5. 点击扩展图标打开设置页面。
+5. 点击扩展图标打开 Side Panel，需要配置时使用其中的设置按钮。
 
 ## 配置 WebDAV 服务器
 
@@ -111,6 +115,19 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 请尽量使用 HTTPS WebDAV URL。HTTP 在技术上可能可用，但会在没有传输加密的情况下发送 Basic Auth 凭据。
 
 ## 使用方式
+
+### 通过 Side Panel 批量保存
+
+1. 打开普通 HTTP 或 HTTPS 网页，点击扩展图标。
+2. 检查去重后的图片列表。初始状态会全选发现的图片，可以使用 **Select all**、**Clear** 或逐项复选框调整。
+3. 选择已配置的 WebDAV 目标；如果只有一个目标，会自动选中。
+4. 如果启用了 **Ask every time**，为整个批次统一选择一次输出格式。
+5. 点击 **Save images**。Side Panel 会展示每张图片的详细进度，网页同时显示紧凑进度提示。
+6. 完成后查看成功、警告、失败和取消数量；如有需要，可点击 **Retry failed** 重试失败项。
+
+规范化 URL 完全相同的图片只展示一次；响应式图片存在多个候选时，会展示 `srcset` 或 `<picture>` 声明的最大候选。同一批次内生成相同文件名时，会依次增加 `_2`、`_3` 等后缀；远端已存在同名文件时仍遵循扩展当前的覆盖行为。
+
+### 通过右键菜单保存单张图片
 
 1. 在网页图片上点击右键。
 2. 选择 **Save Image to WebDAV**。
@@ -161,7 +178,8 @@ WebDAV Image Saver 已上架官方 Chrome Web Store：
 
 - `contextMenus`：为图片添加右键保存菜单。
 - `storage`：将 WebDAV 服务器配置保存到 Chrome 扩展存储中。
-- `scripting`：在你选择保存操作后，将倒计时/状态气泡注入当前页面。
+- `scripting`：扫描当前网页图片，并向网页注入倒计时、进度和结果提示。
+- `sidePanel`：在当前网页右侧展示批量图片列表、目标选择、进度和结果。
 - `host_permissions: <all_urls>`：获取所选图片 URL，并连接用户提供的 WebDAV URL。
 
 ## 数据处理
@@ -185,15 +203,18 @@ node --check image-format.js
 node --check filename-rule.js
 node --check directory-rule.js
 node --check settings.js
+node --check image-discovery.js
+node --check batch-save.js
 node --check background.js
 node --check content_script.js
+node --check sidepanel/sidepanel.js
 node --check options/options.js
 ```
 
 提交 Chrome Web Store 前检查远程资源：
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js image-discovery.js batch-save.js background.js content_script.js sidepanel options assets
 ```
 
 设置页面应只使用随包提供的文件和内联 SVG symbols。不要添加远程托管的脚本、样式、字体或图标字体。
@@ -210,11 +231,14 @@ directory-rule.js
 local-copy.js
 local-copy-fs.js
 settings.js
+image-discovery.js
+batch-save.js
 background.js
 content_script.js
 assets/
 icons/
 options/
+sidepanel/
 PRIVACY.md
 STORE_DESCRIPTION.md
 ```
@@ -239,6 +263,8 @@ cp \
   "$package_repo_root/local-copy.js" \
   "$package_repo_root/local-copy-fs.js" \
   "$package_repo_root/settings.js" \
+  "$package_repo_root/image-discovery.js" \
+  "$package_repo_root/batch-save.js" \
   "$package_repo_root/background.js" \
   "$package_repo_root/content_script.js" \
   "$package_repo_root/PRIVACY.md" \
@@ -248,6 +274,7 @@ cp -R \
   "$package_repo_root/assets" \
   "$package_repo_root/icons" \
   "$package_repo_root/options" \
+  "$package_repo_root/sidepanel" \
   "$package_staging/"
 
 (

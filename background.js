@@ -4,6 +4,7 @@ importScripts('directory-rule.js');
 importScripts('local-copy.js');
 importScripts('local-copy-fs.js');
 importScripts('settings.js');
+importScripts('batch-save.js');
 
 // Store configurations in memory for quick access
 let webdavServers = [];
@@ -11,16 +12,33 @@ let appSettings = AppSettings.createDefaultSettings();
 let configReady;
 let configReloadQueue = Promise.resolve();
 const PENDING_UPLOAD_PREFIX = 'pendingUpload_';
+const BATCH_SCAN_PREFIX = 'batchScan_';
+const BATCH_PREFIX = 'batch_';
+const ACTIVE_BATCH_PREFIX = 'activeBatchForTab_';
 const processingUploadIds = new Set();
 const contentScriptInjectionPromises = new Map();
 const confirmedWebdavCollections = new Set();
 const webdavDirectoryCreationPromises = new Map();
 let webdavDirectoryCacheGeneration = 0;
 let persistLocalCopyImpl = LocalCopyFs.writeLocalCopy;
+let saveImageCoreImpl = (...args) => saveImageCore(...args);
+const batchTaskPool = BatchSave.createTaskPool(3);
+const batchRunPromises = new Map();
+const batchUpdateQueues = new Map();
+const batchAbortControllers = new Map();
 
 // --- Initialization ---
+function configureSidePanel() {
+    if (!chrome.sidePanel?.setPanelBehavior) return Promise.resolve();
+    return chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+        .catch(error => console.error('Failed to configure Side Panel:', error));
+}
+
+configureSidePanel();
+
 chrome.runtime.onInstalled.addListener(() => {
     console.log("WebDAV Image Saver installed/updated.");
+    configureSidePanel();
 });
 
 // --- Context Menu Click Handler ---
@@ -53,8 +71,8 @@ async function ensureContentScript(tabId) {
 
     const injectionPromise = (async () => {
         try {
-            await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-            return;
+            const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+            if (response?.pong && response?.batchDiscovery) return;
         } catch (error) {
             console.log('Content script not present, injecting for tab:', tabId);
         }
@@ -65,7 +83,7 @@ async function ensureContentScript(tabId) {
         });
         await chrome.scripting.executeScript({
             target: { tabId },
-            files: ['content_script.js']
+            files: ['image-discovery.js', 'content_script.js']
         });
     })();
 
@@ -74,6 +92,394 @@ async function ensureContentScript(tabId) {
         await injectionPromise;
     } finally {
         contentScriptInjectionPromises.delete(tabId);
+    }
+}
+
+function publicBatchSettings(settings) {
+    return {
+        image: { saveFormat: settings.image?.saveFormat || 'original' },
+        filename: {
+            rule: settings.filename?.rule || 'automatic',
+            customTemplate: settings.filename?.customTemplate || ''
+        },
+        directory: { rule: settings.directory?.rule || 'fixed' },
+        localCopy: {
+            enabled: Boolean(settings.localCopy?.enabled),
+            folderName: String(settings.localCopy?.folderName || ''),
+            directory: { rule: settings.localCopy?.directory?.rule || 'webdav' },
+            filename: {
+                rule: settings.localCopy?.filename?.rule || 'webdav',
+                customTemplate: settings.localCopy?.filename?.customTemplate || ''
+            }
+        }
+    };
+}
+
+async function getBatchPanelContext(tab) {
+    await configReady;
+    if (!tab || !Number.isInteger(tab.id)) throw new Error('No active browser tab is available.');
+    return {
+        tab: {
+            id: tab.id,
+            url: String(tab.url || ''),
+            title: String(tab.title || '')
+        },
+        servers: webdavServers.map(server => ({
+            id: server.id,
+            name: server.name,
+            folder: server.folder || '/'
+        })),
+        settings: publicBatchSettings(appSettings),
+        activeBatch: await getActiveBatchForTab(tab.id)
+    };
+}
+
+function assertScannableTab(tab) {
+    if (!tab || !Number.isInteger(tab.id)) throw new Error('No active browser tab is available.');
+    let url;
+    try {
+        url = new URL(String(tab.url || ''));
+    } catch (_) {
+        throw new Error('This page does not allow image scanning.');
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error('This page does not allow image scanning.');
+    }
+}
+
+async function scanBatchTab(tab) {
+    assertScannableTab(tab);
+    await ensureContentScript(tab.id);
+    const response = await chrome.tabs.sendMessage(tab.id, { action: 'batchPage:collectImages' });
+    if (!response?.success || !Array.isArray(response.images)) {
+        throw new Error(response?.error || 'Could not scan images on this page.');
+    }
+    const scan = {
+        scanId: `scan_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`,
+        tabId: tab.id,
+        pageUrl: String(response.pageUrl || tab.url || ''),
+        pageTitle: String(response.pageTitle || tab.title || ''),
+        createdAt: Date.now(),
+        images: response.images.map(image => ({
+            id: String(image.id || ''),
+            url: String(image.url || ''),
+            name: String(image.name || 'image'),
+            width: Number(image.width) || 0,
+            height: Number(image.height) || 0,
+            alt: String(image.alt || ''),
+            domIndex: Number(image.domIndex) || 0
+        })).filter(image => image.id && /^https?:\/\//i.test(image.url))
+    };
+    await chrome.storage.session.set({ [`${BATCH_SCAN_PREFIX}${tab.id}`]: scan });
+    return scan;
+}
+
+async function getActiveTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error('No active browser tab is available.');
+    return tab;
+}
+
+function batchKey(batchId) {
+    return `${BATCH_PREFIX}${batchId}`;
+}
+
+function activeBatchKey(tabId) {
+    return `${ACTIVE_BATCH_PREFIX}${tabId}`;
+}
+
+function copySerializable(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function isTerminalBatchState(state) {
+    return state === 'completed' || state === 'cancelled';
+}
+
+async function getBatch(batchId) {
+    const key = batchKey(batchId);
+    const data = await chrome.storage.session.get(key);
+    return data[key] || null;
+}
+
+async function getActiveBatchForTab(tabId) {
+    const activeKey = activeBatchKey(tabId);
+    const data = await chrome.storage.session.get(activeKey);
+    const batchId = data[activeKey];
+    if (!batchId) return null;
+    const batch = await getBatch(batchId);
+    return batch ? BatchSave.toPublicBatch(batch) : null;
+}
+
+async function notifyBatchState(batch) {
+    const publicBatch = BatchSave.toPublicBatch(batch);
+    const pageAction = isTerminalBatchState(batch.state)
+        ? 'batchPage:showSummary'
+        : 'batchPage:showProgress';
+    await Promise.allSettled([
+        chrome.runtime.sendMessage({ action: 'batchPanel:stateChanged', batch: publicBatch }),
+        chrome.tabs.sendMessage(batch.tabId, { action: pageAction, batch: publicBatch })
+    ]);
+    return publicBatch;
+}
+
+async function persistBatch(batch, notify = true) {
+    await chrome.storage.session.set({
+        [batchKey(batch.batchId)]: batch,
+        [activeBatchKey(batch.tabId)]: batch.batchId
+    });
+    return notify ? notifyBatchState(batch) : BatchSave.toPublicBatch(batch);
+}
+
+function updateBatch(batchId, updater, notify = true) {
+    const previous = batchUpdateQueues.get(batchId) || Promise.resolve();
+    const update = previous.then(async () => {
+        const current = await getBatch(batchId);
+        if (!current) throw new Error('The batch save no longer exists.');
+        const next = await updater(current);
+        if (!next || next.batchId !== current.batchId) throw new Error('Invalid batch state update.');
+        await persistBatch(next, notify);
+        return next;
+    });
+    batchUpdateQueues.set(batchId, update.catch(() => {}));
+    return update;
+}
+
+function setSaveImageCore(saveFunction) {
+    saveImageCoreImpl = typeof saveFunction === 'function'
+        ? saveFunction
+        : (...args) => saveImageCore(...args);
+}
+
+function validateBatchFormat(targetFormat) {
+    const allowedFormats = ['original', 'png', 'jpg', 'webp'];
+    if (!allowedFormats.includes(targetFormat)) throw new Error('Choose a valid image format for this batch.');
+    const savedFormat = appSettings.image?.saveFormat || 'original';
+    if (savedFormat !== 'ask' && targetFormat !== savedFormat) {
+        throw new Error('The save format setting changed. Refresh the Side Panel and try again.');
+    }
+}
+
+async function startBatch({ scanId, tabId, imageIds, serverId, targetFormat }) {
+    await configReady;
+    if (!Number.isInteger(tabId)) throw new Error('A valid tab is required to start a batch.');
+    const scanStorageKey = `${BATCH_SCAN_PREFIX}${tabId}`;
+    const scanData = await chrome.storage.session.get(scanStorageKey);
+    const scan = scanData[scanStorageKey];
+    if (!scan || scan.scanId !== scanId) {
+        throw new Error('This image scan is no longer current. Refresh the Side Panel and try again.');
+    }
+
+    const serverConfig = webdavServers.find(server => String(server.id) === String(serverId));
+    if (!serverConfig) throw new Error('Choose an available WebDAV destination.');
+    validateBatchFormat(String(targetFormat || ''));
+
+    const selectedIds = new Set((Array.isArray(imageIds) ? imageIds : []).map(String));
+    if (selectedIds.size === 0) throw new Error('Select at least one image to save.');
+    const selectedImages = scan.images.filter(image => selectedIds.has(String(image.id)));
+    if (selectedImages.length !== selectedIds.size) {
+        throw new Error('A selected image is no longer available. Refresh the Side Panel and try again.');
+    }
+
+    const active = await getActiveBatchForTab(tabId);
+    if (active && !isTerminalBatchState(active.state)) {
+        throw new Error('A batch save is already running for this tab.');
+    }
+
+    const batch = BatchSave.createBatch({
+        batchId: `batch_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`,
+        tabId,
+        pageUrl: scan.pageUrl,
+        pageTitle: scan.pageTitle,
+        serverId: serverConfig.id,
+        serverName: serverConfig.name,
+        targetFormat,
+        settings: copySerializable(appSettings),
+        images: selectedImages
+    });
+    await persistBatch(batch);
+    runBatch(batch.batchId).catch(error => console.error('Batch save failed to run:', error));
+    return BatchSave.toPublicBatch(batch);
+}
+
+function controllerKey(batchId, itemId) {
+    return `${batchId}\u0000${itemId}`;
+}
+
+function isAbortFailure(error) {
+    return error?.name === 'AbortError' || /aborted/i.test(String(error?.message || ''));
+}
+
+async function processBatchItem(batchId, itemId, serverConfig, allocator) {
+    const abortController = new AbortController();
+    const activeControllerKey = controllerKey(batchId, itemId);
+    batchAbortControllers.set(activeControllerKey, abortController);
+
+    let preparedBatch = await updateBatch(batchId, batch => {
+        const item = batch.items.find(candidate => candidate.id === itemId);
+        if (!item || item.state !== 'queued' || batch.state === 'cancelling') return batch;
+        return BatchSave.transitionItem(batch, itemId, {
+            state: 'preparing',
+            message: '',
+            error: '',
+            warningCodes: [],
+            attempts: (item.attempts || 0) + 1
+        });
+    });
+    let item = preparedBatch.items.find(candidate => candidate.id === itemId);
+    if (!item || item.state !== 'preparing') {
+        batchAbortControllers.delete(activeControllerKey);
+        return;
+    }
+
+    try {
+        const result = await saveImageCoreImpl({
+            imageUrl: item.url,
+            pageUrl: preparedBatch.pageUrl,
+            pageTitle: preparedBatch.pageTitle,
+            serverConfig,
+            targetFormat: preparedBatch.targetFormat,
+            settings: preparedBatch.settings,
+            signal: abortController.signal,
+            allocateFilename(folder, generatedFilename) {
+                if (item.filename && item.allocatedFolder === folder) return item.filename;
+                return allocator.reserve(folder, generatedFilename);
+            },
+            async onTargetResolved({ folder, filename }) {
+                preparedBatch = await updateBatch(batchId, batch => BatchSave.transitionItem(batch, itemId, {
+                    state: 'uploading',
+                    filename,
+                    allocatedFolder: folder
+                }));
+                item = preparedBatch.items.find(candidate => candidate.id === itemId);
+            }
+        });
+        await updateBatch(batchId, batch => BatchSave.transitionItem(batch, itemId, {
+            state: result.status === 'warning' ? 'warning' : 'success',
+            filename: result.filename || item.filename,
+            allocatedFolder: result.folder || item.allocatedFolder,
+            message: result.message || '',
+            error: '',
+            warningCodes: Array.isArray(result.warningCodes) ? result.warningCodes : []
+        }));
+    } catch (error) {
+        const latest = await getBatch(batchId);
+        const cancelled = abortController.signal.aborted || isAbortFailure(error) || latest?.state === 'cancelling';
+        await updateBatch(batchId, batch => BatchSave.transitionItem(batch, itemId, {
+            state: cancelled ? 'cancelled' : 'failed',
+            message: cancelled ? 'Cancelled' : '',
+            error: cancelled ? '' : (error.message || String(error))
+        }));
+    } finally {
+        batchAbortControllers.delete(activeControllerKey);
+    }
+}
+
+function runBatch(batchId) {
+    if (batchRunPromises.has(batchId)) return batchRunPromises.get(batchId);
+
+    const run = (async () => {
+        let batch = await getBatch(batchId);
+        if (!batch) throw new Error('The batch save no longer exists.');
+        if (isTerminalBatchState(batch.state) && !batch.items.some(item => item.state === 'queued')) {
+            return BatchSave.toPublicBatch(batch);
+        }
+
+        const serverConfig = webdavServers.find(server => String(server.id) === String(batch.serverId));
+        if (!serverConfig) {
+            batch = await updateBatch(batchId, current => ({
+                ...current,
+                state: 'completed',
+                items: current.items.map(item => item.state === 'queued'
+                    ? { ...item, state: 'failed', error: 'The selected WebDAV destination is no longer available.' }
+                    : item),
+                updatedAt: Date.now()
+            }));
+            return BatchSave.toPublicBatch(batch);
+        }
+
+        batch = await updateBatch(batchId, current => ({ ...current, state: 'running', updatedAt: Date.now() }));
+        const allocator = BatchSave.createFilenameAllocator(batch);
+        const queuedIds = batch.items.filter(item => item.state === 'queued').map(item => item.id);
+        await Promise.all(queuedIds.map(itemId => (
+            batchTaskPool.run(() => processBatchItem(batchId, itemId, serverConfig, allocator))
+        )));
+
+        batch = await updateBatch(batchId, current => {
+            const summary = BatchSave.summarize(current);
+            const wasCancelled = current.state === 'cancelling' || summary.cancelled > 0;
+            return {
+                ...current,
+                state: wasCancelled ? 'cancelled' : 'completed',
+                updatedAt: Date.now()
+            };
+        });
+        return BatchSave.toPublicBatch(batch);
+    })();
+
+    batchRunPromises.set(batchId, run);
+    run.finally(() => batchRunPromises.delete(batchId)).catch(() => {});
+    return run;
+}
+
+async function cancelBatch(batchId) {
+    const batch = await updateBatch(batchId, current => {
+        if (isTerminalBatchState(current.state)) return current;
+        return {
+            ...current,
+            state: 'cancelling',
+            updatedAt: Date.now(),
+            items: current.items.map(item => item.state === 'queued'
+                ? { ...item, state: 'cancelled', message: 'Cancelled', error: '' }
+                : item)
+        };
+    });
+    for (const [key, controller] of batchAbortControllers) {
+        if (key.startsWith(`${batchId}\u0000`)) controller.abort();
+    }
+    if (!batchRunPromises.has(batchId)) {
+        const finished = await updateBatch(batchId, current => ({ ...current, state: 'cancelled', updatedAt: Date.now() }));
+        return BatchSave.toPublicBatch(finished);
+    }
+    return BatchSave.toPublicBatch(batch);
+}
+
+async function retryFailedBatch(batchId) {
+    const batch = await updateBatch(batchId, current => {
+        if (!isTerminalBatchState(current.state)) throw new Error('Wait for the current batch to finish before retrying.');
+        if (!current.items.some(item => item.state === 'failed')) throw new Error('This batch has no failed images to retry.');
+        return {
+            ...current,
+            state: 'queued',
+            updatedAt: Date.now(),
+            items: current.items.map(item => item.state === 'failed'
+                ? { ...item, state: 'queued', message: '', error: '', warningCodes: [] }
+                : item)
+        };
+    });
+    runBatch(batchId).catch(error => console.error('Failed to retry batch:', error));
+    return BatchSave.toPublicBatch(batch);
+}
+
+async function resumePersistedBatches() {
+    const sessionData = await chrome.storage.session.get(null);
+    for (const [key, storedBatch] of Object.entries(sessionData)) {
+        if (!key.startsWith(BATCH_PREFIX) || !storedBatch?.batchId) continue;
+        if (storedBatch.state === 'cancelling') {
+            const cancelled = {
+                ...storedBatch,
+                state: 'cancelled',
+                updatedAt: Date.now(),
+                items: storedBatch.items.map(item => ['queued', 'preparing', 'uploading'].includes(item.state)
+                    ? { ...item, state: 'cancelled', message: 'Cancelled', error: '' }
+                    : item)
+            };
+            await persistBatch(cancelled, false);
+        } else if (!isTerminalBatchState(storedBatch.state)) {
+            const normalized = BatchSave.normalizeInterruptedBatch(storedBatch);
+            await persistBatch(normalized, false);
+            runBatch(normalized.batchId).catch(error => console.error('Failed to resume batch:', error));
+        }
     }
 }
 
@@ -220,18 +626,14 @@ async function handleUploadCountdownComplete(uploadId, tabId) {
     }
 }
 
-chrome.action.onClicked.addListener(() => {
-    chrome.runtime.openOptionsPage();
-});
-
 chrome.tabs.onRemoved.addListener(tabId => {
     removePendingUploadsForTab(tabId)
         .catch(error => console.warn('Failed to clean up pending uploads for closed tab:', error));
 });
 
-function keepMessageChannelOpen(task, sendResponse) {
+function keepMessageChannelOpen(task, sendResponse, formatResponse = () => ({ success: true })) {
     Promise.resolve(task)
-        .then(() => sendResponse({ success: true }))
+        .then(result => sendResponse(formatResponse(result)))
         .catch(error => {
             console.error('Background message task failed:', error);
             sendResponse({ success: false, error: error.message || String(error) });
@@ -239,10 +641,67 @@ function keepMessageChannelOpen(task, sendResponse) {
     return true;
 }
 
+function assertSidePanelSender(sender) {
+    const sidePanelUrl = chrome.runtime.getURL('sidepanel/sidepanel.html');
+    if (String(sender?.url || '').split(/[?#]/)[0] !== sidePanelUrl) {
+        throw new Error('This batch command is only available from the Side Panel.');
+    }
+}
+
 // --- Listen for Cancellation from Content Script ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'batchPanel:getContext') {
+        return keepMessageChannelOpen(
+            Promise.resolve().then(() => {
+                assertSidePanelSender(sender);
+                return getActiveTab().then(getBatchPanelContext);
+            }),
+            sendResponse,
+            context => ({ success: true, context })
+        );
+    }
+    else if (message.action === 'batchPanel:scan') {
+        return keepMessageChannelOpen(
+            Promise.resolve().then(() => {
+                assertSidePanelSender(sender);
+                return getActiveTab().then(scanBatchTab);
+            }),
+            sendResponse,
+            scan => ({ success: true, scan })
+        );
+    }
+    else if (message.action === 'batchPanel:start') {
+        return keepMessageChannelOpen(
+            Promise.resolve().then(() => {
+                assertSidePanelSender(sender);
+                return startBatch(message);
+            }),
+            sendResponse,
+            batch => ({ success: true, batch })
+        );
+    }
+    else if (message.action === 'batchPanel:cancel') {
+        return keepMessageChannelOpen(
+            Promise.resolve().then(() => {
+                assertSidePanelSender(sender);
+                return cancelBatch(String(message.batchId || ''));
+            }),
+            sendResponse,
+            batch => ({ success: true, batch })
+        );
+    }
+    else if (message.action === 'batchPanel:retryFailed') {
+        return keepMessageChannelOpen(
+            Promise.resolve().then(() => {
+                assertSidePanelSender(sender);
+                return retryFailedBatch(String(message.batchId || ''));
+            }),
+            sendResponse,
+            batch => ({ success: true, batch })
+        );
+    }
     // Make sure to handle other messages too (like testWebdav, configUpdated)
-    if (message.action === 'cancelUpload') {
+    else if (message.action === 'cancelUpload') {
         return keepMessageChannelOpen(
             cancelPendingUpload(message.uploadId, sender.tab?.id),
             sendResponse
@@ -391,130 +850,162 @@ function createContextMenus() {
 
 
 // --- Image Upload Logic ---
+async function saveImageCore({
+    imageUrl,
+    pageUrl,
+    pageTitle,
+    serverConfig,
+    targetFormat = 'original',
+    settings = appSettings,
+    now = new Date(),
+    signal,
+    allocateFilename = (_folder, filename) => filename,
+    onTargetResolved = async () => {}
+}) {
+    const response = await fetch(imageUrl, { signal });
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    const imageBlob = await response.blob();
+
+    const dimensions = await FilenameRule.readImageDimensions(imageBlob);
+    const sourceExtension = FilenameRule.extractSourceExtension(imageUrl);
+    const provisionalExtension = ImageFormat.extensionForMimeType(imageBlob.type, sourceExtension);
+    const provisionalFilename = FilenameRule.generateFilename({
+        rule: 'automatic',
+        imageUrl,
+        pageUrl,
+        extension: provisionalExtension,
+        now
+    });
+    const preparedImage = await ImageFormat.prepareImageForUpload({
+        blob: imageBlob,
+        filename: provisionalFilename,
+        targetFormat
+    });
+    const finalExtension = ImageFormat.extensionForMimeType(
+        preparedImage.mimeType,
+        extractFilenameExtension(preparedImage.filename)
+    );
+    const generatedFilename = FilenameRule.generateFilename({
+        rule: settings.filename?.rule,
+        template: settings.filename?.customTemplate,
+        imageUrl,
+        pageUrl,
+        pageTitle,
+        width: dimensions.width,
+        height: dimensions.height,
+        extension: finalExtension,
+        now
+    });
+    if (preparedImage.warningDetail) console.warn('Image conversion fallback:', preparedImage.warningDetail);
+
+    const targetDirectory = DirectoryRule.resolveDirectory({
+        rule: settings.directory?.rule,
+        rootFolder: serverConfig.folder || '/',
+        pageUrl,
+        now
+    });
+    await ensureWebdavDirectories(serverConfig, targetDirectory.foldersToCreate);
+
+    const filename = allocateFilename(targetDirectory.folder, generatedFilename);
+    await onTargetResolved({ folder: targetDirectory.folder, filename });
+    const targetUrl = buildWebdavResourceUrl(serverConfig.url, targetDirectory.folder, filename);
+    const headers = new Headers();
+    headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
+    headers.append('Content-Type', preparedImage.mimeType);
+
+    const putResponse = await fetch(targetUrl, {
+        method: 'PUT',
+        headers,
+        body: preparedImage.blob,
+        signal
+    });
+    if (!putResponse.ok && putResponse.status !== 201 && putResponse.status !== 204) {
+        let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
+        try {
+            const errorText = await putResponse.text();
+            const match = errorText.match(/<[ds]:message[^>]*>([^<]+)<\/[ds]:message>/i);
+            if (match && match[1]) errorDetails += ` - ${match[1].trim()}`;
+            else if (errorText.length < 100 && errorText.length > 0) errorDetails += ` - ${errorText}`;
+        } catch (_) { /* Ignore body read errors. */ }
+        throw new Error(`Upload failed: ${errorDetails}`);
+    }
+
+    let status = preparedImage.warningCode ? 'warning' : 'success';
+    let message = preparedImage.warningCode
+        ? getConversionWarningMessage(preparedImage, filename)
+        : `Saved as "${filename}"`;
+    const warningCodes = preparedImage.warningCode ? [preparedImage.warningCode] : [];
+    const localCopyResult = await saveLocalCopyOfUpload({
+        blob: preparedImage.blob,
+        webdavFilename: filename,
+        imageUrl,
+        pageUrl,
+        pageTitle,
+        width: dimensions.width,
+        height: dimensions.height,
+        extension: finalExtension,
+        now,
+        settings
+    });
+    if (localCopyResult.warning) {
+        status = 'warning';
+        warningCodes.push('local-copy');
+        message = `${message} ${localCopyResult.warning}`;
+    }
+
+    return {
+        status,
+        message,
+        filename,
+        folder: targetDirectory.folder,
+        warningCodes
+    };
+}
+
 async function uploadImage(imageUrl, pageUrl, pageTitle, serverConfig, uploadId, tabId, targetFormat = 'original') {
-    let success = false;
     let status = 'error';
-    let statusMessage = '';
-    let filename = '';
-
+    let message = '';
     try {
-        console.log(`[${uploadId}] Fetching image: ${imageUrl}`);
-        const response = await fetch(imageUrl);
-        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-        const imageBlob = await response.blob();
-        console.log(`[${uploadId}] Image fetched: ${imageBlob.size} bytes, type: ${imageBlob.type}`);
-
-        const uploadTime = new Date();
-        const dimensions = await FilenameRule.readImageDimensions(imageBlob);
-        const sourceExtension = FilenameRule.extractSourceExtension(imageUrl);
-        const provisionalExtension = ImageFormat.extensionForMimeType(imageBlob.type, sourceExtension);
-        const provisionalFilename = FilenameRule.generateFilename({
-            rule: 'automatic',
-            imageUrl,
-            pageUrl,
-            extension: provisionalExtension,
-            now: uploadTime
-        });
-        const preparedImage = await ImageFormat.prepareImageForUpload({
-            blob: imageBlob,
-            filename: provisionalFilename,
-            targetFormat
-        });
-        const finalExtension = ImageFormat.extensionForMimeType(
-            preparedImage.mimeType,
-            extractFilenameExtension(preparedImage.filename)
-        );
-        filename = FilenameRule.generateFilename({
-            rule: appSettings.filename.rule,
-            template: appSettings.filename.customTemplate,
+        const result = await saveImageCore({
             imageUrl,
             pageUrl,
             pageTitle,
-            width: dimensions.width,
-            height: dimensions.height,
-            extension: finalExtension,
-            now: uploadTime
+            serverConfig,
+            targetFormat,
+            settings: appSettings
         });
-        if (preparedImage.warningDetail) {
-            console.warn(`[${uploadId}] Image conversion fallback:`, preparedImage.warningDetail);
-        }
-
-        const targetDirectory = DirectoryRule.resolveDirectory({
-            rule: appSettings.directory.rule,
-            rootFolder: serverConfig.folder || '/',
-            pageUrl,
-            now: uploadTime
-        });
-        await ensureWebdavDirectories(serverConfig, targetDirectory.foldersToCreate);
-
-        const targetUrl = buildWebdavResourceUrl(serverConfig.url, targetDirectory.folder, filename);
-        console.log(`[${uploadId}] Target WebDAV URL: ${targetUrl}`);
-
-        const headers = new Headers();
-        headers.append('Authorization', basicAuthHeader(serverConfig.username, serverConfig.password));
-        headers.append('Content-Type', preparedImage.mimeType);
-
-        console.log(`[${uploadId}] Sending PUT request...`);
-        const putResponse = await fetch(targetUrl, { method: 'PUT', headers: headers, body: preparedImage.blob });
-        console.log(`[${uploadId}] WebDAV response status: ${putResponse.status}`);
-
-        if (putResponse.ok || putResponse.status === 201 || putResponse.status === 204) {
-            console.log(`[${uploadId}] Image uploaded successfully!`);
-            success = true;
-            status = preparedImage.warningCode ? 'warning' : 'success';
-            statusMessage = preparedImage.warningCode
-                ? getConversionWarningMessage(preparedImage, filename)
-                : `Saved as "${filename}"`;
-            const localCopyResult = await saveLocalCopyOfUpload({
-                blob: preparedImage.blob,
-                webdavFilename: filename,
-                imageUrl,
-                pageUrl,
-                pageTitle,
-                width: dimensions.width,
-                height: dimensions.height,
-                extension: finalExtension,
-                now: uploadTime
-            });
-            if (localCopyResult.warning) {
-                status = 'warning';
-                statusMessage = `${statusMessage} ${localCopyResult.warning}`;
-            }
-        } else {
-             let errorDetails = `${putResponse.status} ${putResponse.statusText}`;
-             try {
-                 const errorText = await putResponse.text();
-                 console.error(`[${uploadId}] WebDAV Error Response Body:`, errorText);
-                  const match = errorText.match(/<[ds]:message[^>]*>([^<]+)<\/[ds]:message>/i);
-                  if (match && match[1]) { errorDetails += ` - ${match[1].trim()}`; }
-                  else if (errorText.length < 100 && errorText.length > 0) { errorDetails += ` - ${errorText}`; }
-             } catch (e) { /* Ignore body read errors */ }
-             throw new Error(`Upload failed: ${errorDetails}`);
-        }
-
+        status = result.status;
+        message = result.message;
     } catch (error) {
         console.error(`[${uploadId}] Upload process failed:`, error);
-        success = false;
-        status = 'error';
-        statusMessage = `Failed: ${error.message}`;
+        message = `Failed: ${error.message}`;
     }
 
-    chrome.tabs.sendMessage(tabId, {
+    await chrome.tabs.sendMessage(tabId, {
         action: 'showStatusBubble',
-        uploadId: uploadId,
-        status: success ? status : 'error',
-        message: statusMessage
-    }).then(() => {
-        console.log(`[${uploadId}] Successfully sent status message to tab ${tabId}`);
-    }).catch(e => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, e));
-    }
+        uploadId,
+        status,
+        message
+    }).catch(error => console.error(`[${uploadId}] Failed to send final status to tab ${tabId}:`, error));
+}
 
-async function saveLocalCopyOfUpload({ blob, webdavFilename, imageUrl, pageUrl, pageTitle, width, height, extension, now }) {
+async function saveLocalCopyOfUpload({
+    blob,
+    webdavFilename,
+    imageUrl,
+    pageUrl,
+    pageTitle,
+    width,
+    height,
+    extension,
+    now,
+    settings = appSettings
+}) {
     const plan = LocalCopy.resolveLocalSave({
-        localCopy: appSettings.localCopy,
-        webdavDirectoryRule: appSettings.directory?.rule,
+        localCopy: settings.localCopy,
+        webdavDirectoryRule: settings.directory?.rule,
         webdavFilename,
-        webdavFilenameRule: appSettings.filename,
+        webdavFilenameRule: settings.filename,
         imageUrl,
         pageUrl,
         pageTitle,
@@ -1137,4 +1628,9 @@ configReady = loadConfig().catch(error => {
     console.error('Initial configuration load failed:', error);
 });
 configReloadQueue = configReady;
-configReady.then(createContextMenus);
+configReady.then(() => {
+    createContextMenus();
+    return resumePersistedBatches();
+}).catch(error => {
+    console.error('Failed to restore background state:', error);
+});

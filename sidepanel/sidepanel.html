@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Batch save images</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <main class="panel-shell">
+    <header class="app-header">
+      <div class="logo-section">
+        <img class="logo-image" src="../icons/icon48.png" alt="" aria-hidden="true">
+        <div class="logo-text">
+          <h1>WebDAV Image Saver</h1>
+          <p id="page-title" data-i18n="currentPage">Current page</p>
+        </div>
+      </div>
+      <button id="open-settings" class="icon-button" type="button" aria-label="Open extension settings" title="Settings" data-i18n-aria-label="openSettings" data-i18n-title="settings">
+        <svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M13.77 2.15C13.4 2 12.93 2 12 2s-1.4 0-1.77.15a2 2 0 0 0-1.08 1.08c-.09.23-.13.49-.14.87a1.6 1.6 0 0 1-2.36 1.36c-.34-.18-.58-.28-.82-.31a2 2 0 0 0-1.48.4c-.31.24-.55.65-1.01 1.45-.47.81-.7 1.21-.75 1.6a2 2 0 0 0 .4 1.48c.14.2.35.36.67.56a1.6 1.6 0 0 1 0 2.72c-.32.2-.53.36-.68.56a2 2 0 0 0-.39 1.47c.05.4.28.8.75 1.61.46.8.7 1.21 1.01 1.45a2 2 0 0 0 1.48.4c.24-.03.48-.13.82-.31a1.6 1.6 0 0 1 2.36 1.36c.01.38.05.64.14.87a2 2 0 0 0 1.08 1.08c.37.15.84.15 1.77.15s1.4 0 1.77-.15a2 2 0 0 0 1.08-1.08c.09-.23.13-.49.14-.87a1.6 1.6 0 0 1 2.36-1.36c.34.18.58.28.82.31a2 2 0 0 0 1.48-.4c.31-.24.55-.65 1.01-1.45.47-.81.7-1.21.75-1.61a2 2 0 0 0-.4-1.47c-.14-.2-.35-.36-.67-.56a1.6 1.6 0 0 1 0-2.72c.32-.2.53-.36.67-.56a2 2 0 0 0 .4-1.48c-.05-.39-.28-.79-.75-1.6-.46-.8-.7-1.21-1.01-1.45a2 2 0 0 0-1.48-.4c-.24.03-.48.13-.82.31a1.6 1.6 0 0 1-2.36-1.36c-.01-.38-.05-.64-.14-.87a2 2 0 0 0-1.08-1.08Z"></path>
+        </svg>
+      </button>
+    </header>
+
+    <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+
+    <section id="selection-view" class="selection-view">
+      <div class="toolbar" aria-label="Image selection actions" data-i18n-aria-label="selectionActions">
+        <p id="page-meta" class="page-meta" data-i18n="loading">Loading…</p>
+        <div class="selection-actions">
+          <button id="select-all" class="text-button" type="button" data-i18n="selectAll">Select all</button>
+          <button id="clear-selection" class="text-button" type="button" data-i18n="clear">Clear</button>
+          <button id="refresh" class="text-button" type="button" data-i18n="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div id="image-list" class="image-list" aria-label="Images found on this page" data-i18n-aria-label="imagesFoundOnPage"></div>
+      <p id="empty-state" class="empty-state" data-i18n="noImagesFound" hidden>No images were found on this page.</p>
+
+      <footer class="save-footer">
+        <div class="field">
+          <span id="destination-label" data-i18n="destination">Destination</span>
+          <input id="destination" type="hidden" value="">
+          <div id="destination-select" class="format-select destination-select">
+            <button
+              id="destination-trigger"
+              class="format-select-trigger"
+              type="button"
+              role="combobox"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-controls="destination-options"
+              aria-labelledby="destination-label destination-value"
+              disabled
+            >
+              <span id="destination-value" data-i18n="noDestinations">No destinations configured</span>
+              <svg class="ui-icon format-select-chevron" aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </button>
+            <div
+              id="destination-options"
+              class="format-select-list"
+              role="listbox"
+              aria-labelledby="destination-label"
+              hidden
+            ></div>
+          </div>
+        </div>
+        <label id="format-field" class="field" hidden>
+          <span data-i18n="saveBatchAs">Save this batch as</span>
+          <select id="format">
+            <option value="" data-i18n="chooseFormat">Choose a format</option>
+            <option value="original" data-i18n="formatOriginal">Original</option>
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </label>
+        <div class="save-row">
+          <span id="selected-count" class="selected-count" data-i18n="selectedNone">0 selected</span>
+          <button id="save" class="primary-button" type="button" data-i18n="saveImages" disabled>Save images</button>
+        </div>
+      </footer>
+    </section>
+
+    <section id="progress-view" class="progress-view" hidden>
+      <div class="progress-heading">
+        <div>
+          <h2 id="progress-title" data-i18n="savingImages">Saving images</h2>
+          <p id="progress-meta" data-i18n="progressInitial">0 of 0 complete</p>
+        </div>
+        <button id="cancel-batch" class="danger-button" type="button" data-i18n="cancel">Cancel</button>
+      </div>
+      <progress id="batch-progress" max="1" value="0">0%</progress>
+      <ul id="batch-items" class="batch-items"></ul>
+      <div class="result-actions">
+        <button id="retry-failed" class="secondary-button" type="button" data-i18n="retryFailed" hidden>Retry failed</button>
+        <button id="new-batch" class="primary-button" type="button" data-i18n="scanCurrentPage" hidden>Scan current page</button>
+      </div>
+    </section>
+  </main>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

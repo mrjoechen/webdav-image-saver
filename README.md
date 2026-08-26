@@ -17,7 +17,7 @@
 
 ## Overview
 
-Save web images directly to your own WebDAV server from Chrome's right-click menu.
+Save one image from Chrome's right-click menu or batch-save images from the current page with the extension's Side Panel.
 
 WebDAV Image Saver is a Manifest V3 Chrome extension for people who keep images in Nextcloud, ownCloud, Synology, QNAP, or any other WebDAV-compatible storage. It does not use any developer-operated server or hosted backend, and it does not collect, store, or transmit your images, credentials, browsing data, or settings to the developer. Configuration, image fetching, folder browsing, and uploads happen inside your browser, with extension data stored locally in Chrome's extension storage.
 
@@ -52,7 +52,7 @@ WebDAV Image Saver is available on the official Chrome Web Store:
 
 **[Install WebDAV Image Saver](https://chromewebstore.google.com/detail/webdav-image-saver/ejgeeldiamekhajplkinnilgdkfcjdep)**
 
-After installation, click the extension icon to configure your WebDAV server. You can pin the extension from Chrome's Extensions menu for quicker access.
+After installation, click the extension icon to open the image Side Panel. Use its settings button to configure your WebDAV server. You can pin the extension from Chrome's Extensions menu for quicker access.
 
 ## Install from GitHub Releases
 
@@ -63,7 +63,7 @@ You can also install a packaged version from the **[GitHub Releases page](https:
 3. Enable **Developer mode** in the upper-right corner.
 4. Drag the downloaded ZIP file onto the extensions page to install it.
 5. If your browser does not accept ZIP drag-and-drop, extract the ZIP file to a permanent folder, click **Load unpacked**, and select the extracted folder containing `manifest.json`.
-6. Click the extension icon to configure your WebDAV server.
+6. Click the extension icon, then use the Side Panel settings button to configure your WebDAV server.
 
 Extensions installed from GitHub Releases do not update automatically through the Chrome Web Store. To upgrade, download the ZIP from the newest release and reinstall it. If you installed from an extracted folder, replace the extracted files and click **Reload** for WebDAV Image Saver on `chrome://extensions`.
 
@@ -72,6 +72,10 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 ## Features
 
 - Save any right-clicked web image to a configured WebDAV destination.
+- Click the extension icon to scan the current page and batch-save selected images from Chrome's Side Panel.
+- Deduplicate identical image URLs and choose the largest responsive `srcset` or `<picture>` candidate available in the page markup.
+- Track batch progress both in the Side Panel and in a compact page status bubble; cancel active work or retry failed items.
+- Apply the same format, filename, directory, WebDAV, and optional local-copy settings to single and batch saves.
 - Configure multiple WebDAV servers.
 - Test WebDAV connectivity before saving.
 - Browse multi-level WebDAV folders and choose a target folder.
@@ -83,7 +87,7 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 - Switch the settings page between English and Chinese.
 - Preserve animated and unsupported images in their original format with a visible warning.
 - Show a short countdown bubble before upload, with a cancel action.
-- Open the settings page from the extension toolbar icon.
+- Open the settings page from the Side Panel.
 - Light/dark monochrome settings UI with packaged SVG icons.
 
 ## Install for Development
@@ -92,7 +96,7 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select this repository folder.
-5. Click the extension icon to open settings.
+5. Click the extension icon to open the Side Panel, then use its settings button when configuration is needed.
 
 ## Configure a WebDAV Server
 
@@ -110,6 +114,19 @@ For automatic updates, install the extension from the Chrome Web Store instead.
 Use HTTPS WebDAV URLs whenever possible. HTTP may work technically, but it sends Basic Auth credentials without transport encryption.
 
 ## Usage
+
+### Batch save from the Side Panel
+
+1. Open a normal HTTP or HTTPS web page and click the extension icon.
+2. Review the deduplicated image list. All discovered images are selected initially; use **Select all**, **Clear**, or the individual checkboxes to adjust the batch.
+3. Choose a configured WebDAV destination. If only one destination exists, it is selected automatically.
+4. If **Ask every time** is enabled, choose one output format for the whole batch.
+5. Click **Save images**. Detailed per-image progress stays in the Side Panel while a compact progress indicator appears on the page.
+6. After completion, review saved, warning, failed, and cancelled counts. Use **Retry failed** if needed.
+
+Images with the same normalized URL appear once. When a responsive image exposes several candidates, the largest candidate declared in `srcset` or `<picture>` is shown. Images that generate the same filename within one batch receive `_2`, `_3`, and later suffixes; existing remote files retain the extension's current overwrite behavior.
+
+### Save one image from the context menu
 
 1. Right-click an image on a web page.
 2. Choose **Save Image to WebDAV**.
@@ -160,7 +177,8 @@ The extension requests these permissions:
 
 - `contextMenus`: Adds the right-click save menu for images.
 - `storage`: Stores WebDAV server configurations in Chrome extension storage.
-- `scripting`: Injects the countdown/status bubble into the current page after you choose a save action.
+- `scripting`: Scans current-page images and injects countdown, progress, and result status UI into the page.
+- `sidePanel`: Shows the batch image list, destination controls, progress, and results beside the current page.
 - `host_permissions: <all_urls>`: Fetches the selected image URL and connects to user-provided WebDAV URLs.
 
 ## Data Handling
@@ -184,15 +202,18 @@ node --check image-format.js
 node --check filename-rule.js
 node --check directory-rule.js
 node --check settings.js
+node --check image-discovery.js
+node --check batch-save.js
 node --check background.js
 node --check content_script.js
+node --check sidepanel/sidepanel.js
 node --check options/options.js
 ```
 
 Check for remote resources before Chrome Web Store submission:
 
 ```bash
-rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js background.js content_script.js options assets
+rg "https://|http://|fonts.googleapis|gstatic|eval\\(|new Function" manifest.json image-format.js filename-rule.js directory-rule.js settings.js image-discovery.js batch-save.js background.js content_script.js sidepanel options assets
 ```
 
 The options page should use only packaged files and inline SVG symbols. Do not add remotely hosted scripts, styles, fonts, or icon fonts.
@@ -209,11 +230,14 @@ directory-rule.js
 local-copy.js
 local-copy-fs.js
 settings.js
+image-discovery.js
+batch-save.js
 background.js
 content_script.js
 assets/
 icons/
 options/
+sidepanel/
 PRIVACY.md
 STORE_DESCRIPTION.md
 ```
@@ -238,6 +262,8 @@ cp \
   "$package_repo_root/local-copy.js" \
   "$package_repo_root/local-copy-fs.js" \
   "$package_repo_root/settings.js" \
+  "$package_repo_root/image-discovery.js" \
+  "$package_repo_root/batch-save.js" \
   "$package_repo_root/background.js" \
   "$package_repo_root/content_script.js" \
   "$package_repo_root/PRIVACY.md" \
@@ -247,6 +273,7 @@ cp -R \
   "$package_repo_root/assets" \
   "$package_repo_root/icons" \
   "$package_repo_root/options" \
+  "$package_repo_root/sidepanel" \
   "$package_staging/"
 
 (
