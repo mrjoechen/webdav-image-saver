@@ -762,6 +762,13 @@ progress::-webkit-progress-value {
   object-fit: cover;
 }
 
+.batch-item-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .status-badge {
   padding: 4px 8px;
   color: var(--text-secondary);
@@ -870,9 +877,12 @@ progress::-webkit-progress-value {
     height: 48px;
   }
 
-  .status-badge {
+  .batch-item-actions {
     grid-column: 2;
+    align-items: center;
     justify-self: start;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 }
 

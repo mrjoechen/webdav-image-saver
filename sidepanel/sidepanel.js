@@ -37,6 +37,8 @@
       savingImages: 'Saving images',
       progressInitial: '0 of 0 complete',
       cancel: 'Cancel',
+      retry: 'Retry',
+      retryImage: 'Retry {name}',
       retryFailed: 'Retry failed',
       scanCurrentPage: 'Scan current page',
       extensionActionFailed: 'The extension could not complete this action.',
@@ -91,6 +93,8 @@
       savingImages: '正在保存图片',
       progressInitial: '已完成 0/0',
       cancel: '取消',
+      retry: '重试',
+      retryImage: '重试 {name}',
       retryFailed: '重试失败项',
       scanCurrentPage: '扫描当前页面',
       extensionActionFailed: '扩展无法完成此操作。',
@@ -131,6 +135,54 @@
     return String(template).replace(/\{([a-zA-Z]+)\}/g, (match, name) =>
       Object.prototype.hasOwnProperty.call(replacements, name) ? String(replacements[name]) : match
     );
+  }
+
+  function canRetryBatchItem(batch = {}, item = {}) {
+    return TERMINAL_BATCH_STATES.has(batch.state) && item.state === 'failed';
+  }
+
+  function canRetryFailedBatch(batch = {}) {
+    if (!TERMINAL_BATCH_STATES.has(batch.state)) return false;
+    const failed = Number(batch.summary?.failed);
+    return Number.isFinite(failed)
+      ? failed > 0
+      : (batch.items || []).some(item => item.state === 'failed');
+  }
+
+  function createRetryFailedMessage(batchId, itemId) {
+    const message = { action: 'batchPanel:retryFailed', batchId: String(batchId || '') };
+    if (itemId !== undefined) message.itemIds = [String(itemId)];
+    return message;
+  }
+
+  function createBatchItemActions(doc, {
+    language,
+    batch,
+    item,
+    statusText,
+    onRetry = () => {}
+  }) {
+    const actions = doc.createElement('span');
+    actions.className = 'batch-item-actions';
+    const badge = doc.createElement('span');
+    badge.className = 'status-badge';
+    badge.textContent = statusText;
+    actions.appendChild(badge);
+
+    if (canRetryBatchItem(batch, item)) {
+      const retry = doc.createElement('button');
+      retry.type = 'button';
+      retry.className = 'secondary-button item-retry-button';
+      retry.textContent = translate(language, 'retry');
+      retry.setAttribute('aria-label', translate(language, 'retryImage', {
+        name: item.name || item.filename || translate(language, 'imageFallback')
+      }));
+      retry.addEventListener('click', () => (
+        onRetry(createRetryFailedMessage(batch.batchId, item.id), retry)
+      ));
+      actions.appendChild(retry);
+    }
+    return actions;
   }
 
   function applyDocumentLanguage(doc, language) {
@@ -569,6 +621,19 @@
       return labels[item.state] || item.state || t('waiting');
     }
 
+    async function retryFailedItems(message, trigger) {
+      if (!currentBatch) return;
+      trigger.disabled = true;
+      try {
+        const response = await send(message);
+        renderBatch(response.batch);
+      } catch (error) {
+        setNotice(error.message, 'error');
+      } finally {
+        trigger.disabled = false;
+      }
+    }
+
     function renderBatch(batch) {
       if (!batch) return;
       closeDestination();
@@ -614,17 +679,21 @@
         detail.className = 'batch-item-detail';
         const target = item.filename ? `${item.allocatedFolder || ''}/${item.filename}`.replace(/\/+/g, '/') : '';
         detail.textContent = batchItemDetail(currentLanguage, item, target);
-        const badge = doc.createElement('span');
-        badge.className = 'status-badge';
-        badge.textContent = batchStatusText(item);
+        const actions = createBatchItemActions(doc, {
+          language: currentLanguage,
+          batch,
+          item,
+          statusText: batchStatusText(item),
+          onRetry: retryFailedItems
+        });
         copy.append(name, detail);
-        row.append(thumb, copy, badge);
+        row.append(thumb, copy, actions);
         elements.batchItems.appendChild(row);
       });
 
       elements.cancel.hidden = terminal;
       elements.cancel.disabled = batch.state === 'cancelling';
-      elements.retry.hidden = !terminal || !(summary.failed > 0);
+      elements.retry.hidden = !canRetryFailedBatch(batch);
       elements.newBatch.hidden = !terminal;
     }
 
@@ -721,14 +790,12 @@
         setNotice(error.message, 'error');
       }
     });
-    elements.retry.addEventListener('click', async () => {
+    elements.retry.addEventListener('click', () => {
       if (!currentBatch) return;
-      try {
-        const response = await send({ action: 'batchPanel:retryFailed', batchId: currentBatch.batchId });
-        renderBatch(response.batch);
-      } catch (error) {
-        setNotice(error.message, 'error');
-      }
+      return retryFailedItems(
+        createRetryFailedMessage(currentBatch.batchId),
+        elements.retry
+      );
     });
     elements.newBatch.addEventListener('click', loadCurrentPage);
 
@@ -750,6 +817,10 @@
   return {
     applyDocumentLanguage,
     batchItemDetail,
+    canRetryBatchItem,
+    canRetryFailedBatch,
+    createBatchItemActions,
+    createRetryFailedMessage,
     createPanelModel,
     createDestinationMenu,
     createUiPreferenceSync,

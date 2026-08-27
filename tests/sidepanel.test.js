@@ -35,6 +35,31 @@ function exactDeclarationsFor(source, selector) {
     }));
 }
 
+function createFakeDocument() {
+  return {
+    createElement(tagName) {
+      return {
+        tagName: tagName.toUpperCase(),
+        className: '',
+        textContent: '',
+        children: [],
+        attributes: new Map(),
+        listeners: new Map(),
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        setAttribute(name, value) {
+          this.attributes.set(name, String(value));
+        },
+        addEventListener(name, listener) {
+          this.listeners.set(name, listener);
+        }
+      };
+    }
+  };
+}
+
 const images = [
   { id: 'image-1', url: 'https://cdn.example/one.jpg', name: 'one.jpg' },
   { id: 'image-2', url: 'https://cdn.example/two.jpg', name: 'two.jpg' }
@@ -114,6 +139,68 @@ test('side panel translates dynamic batch copy in English and Chinese', () => {
     '已保存 2 · 失败 1 · 已取消 0'
   );
   assert.equal(SidePanelApp.translate('unsupported', 'refresh'), 'Refresh');
+});
+
+test('retry actions are exposed only for failed items in terminal batches', () => {
+  const batch = {
+    batchId: 'batch-1',
+    state: 'completed',
+    summary: { failed: 1 },
+    items: [{ id: 'image-1', name: 'one.jpg', state: 'failed' }]
+  };
+
+  assert.equal(SidePanelApp.canRetryBatchItem(batch, batch.items[0]), true);
+  assert.equal(SidePanelApp.canRetryFailedBatch(batch), true);
+  assert.equal(
+    SidePanelApp.canRetryBatchItem({ ...batch, state: 'running' }, batch.items[0]),
+    false
+  );
+  assert.equal(
+    SidePanelApp.canRetryBatchItem(batch, { ...batch.items[0], state: 'success' }),
+    false
+  );
+  assert.equal(SidePanelApp.canRetryFailedBatch({ ...batch, summary: { failed: 0 } }), false);
+});
+
+test('retry messages distinguish one item from all failed items', () => {
+  assert.deepEqual(SidePanelApp.createRetryFailedMessage('batch-1', 'image-2'), {
+    action: 'batchPanel:retryFailed',
+    batchId: 'batch-1',
+    itemIds: ['image-2']
+  });
+  assert.deepEqual(SidePanelApp.createRetryFailedMessage('batch-1'), {
+    action: 'batchPanel:retryFailed',
+    batchId: 'batch-1'
+  });
+  assert.equal(SidePanelApp.translate('en', 'retry'), 'Retry');
+  assert.equal(SidePanelApp.translate('zh', 'retry'), '重试');
+  assert.equal(SidePanelApp.translate('zh', 'retryImage', { name: 'one.jpg' }), '重试 one.jpg');
+});
+
+test('failed batch item actions render a localized retry button and request only that item', () => {
+  const requests = [];
+  const batch = { batchId: 'batch-1', state: 'completed', summary: { failed: 1 } };
+  const item = { id: 'image-2', name: 'two.jpg', state: 'failed' };
+  const actions = SidePanelApp.createBatchItemActions(createFakeDocument(), {
+    language: 'zh',
+    batch,
+    item,
+    statusText: '失败',
+    onRetry: message => requests.push(message)
+  });
+
+  assert.equal(actions.className, 'batch-item-actions');
+  assert.equal(actions.children[0].className, 'status-badge');
+  assert.equal(actions.children[0].textContent, '失败');
+  assert.equal(actions.children[1].tagName, 'BUTTON');
+  assert.equal(actions.children[1].textContent, '重试');
+  assert.equal(actions.children[1].attributes.get('aria-label'), '重试 two.jpg');
+  actions.children[1].listeners.get('click')();
+  assert.deepEqual(requests, [{
+    action: 'batchPanel:retryFailed',
+    batchId: 'batch-1',
+    itemIds: ['image-2']
+  }]);
 });
 
 test('side panel localizes known batch details while preserving server errors', () => {
@@ -234,6 +321,24 @@ test('side panel controls use the settings page spatial metrics', () => {
   assert.equal(imageRow.gap, '12px');
   assert.equal(imageRow.padding, '12px');
   assert.equal(imageRow['border-radius'], 'var(--radius)');
+});
+
+test('failed batch item groups its status and retry control responsively', () => {
+  const actions = declarationsFor(sidePanelCss, '.batch-item-actions');
+  assert.equal(actions.display, 'flex');
+  assert.equal(actions['flex-direction'], 'column');
+  assert.equal(actions['align-items'], 'flex-end');
+  assert.equal(actions.gap, '8px');
+
+  const narrowStart = sidePanelCss.indexOf('@media (max-width: 380px)');
+  const narrowEnd = sidePanelCss.indexOf('@media (prefers-reduced-motion: reduce)');
+  const narrowActions = declarationsFor(
+    sidePanelCss.slice(narrowStart, narrowEnd),
+    '.batch-item-actions'
+  );
+  assert.equal(narrowActions['grid-column'], '2');
+  assert.equal(narrowActions['flex-direction'], 'row');
+  assert.equal(narrowActions['justify-self'], 'start');
 });
 
 test('selected image cards rely on the checkbox without an inset accent rail', () => {
