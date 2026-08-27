@@ -401,6 +401,126 @@ test('retry reuses allocated filenames and only runs failed items', async () => 
   assert.equal(attempts.get('https://cdn.example/two.jpg'), 2);
 });
 
+test('retry can target one failed item without rerunning sibling failures', async () => {
+  const scan = batchScan([
+    { id: 'image-1', url: 'https://cdn.example/one.jpg', name: 'one.jpg' },
+    { id: 'image-2', url: 'https://cdn.example/two.jpg', name: 'two.jpg' },
+    { id: 'image-3', url: 'https://cdn.example/three.jpg', name: 'three.jpg' }
+  ]);
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session: createMemoryStorage({ batchScan_7: scan }),
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  const attempts = new Map();
+  worker.setSaveImageCore(async ({ imageUrl, allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'photo.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    const attempt = (attempts.get(imageUrl) || 0) + 1;
+    attempts.set(imageUrl, attempt);
+    if (imageUrl.endsWith('/three.jpg') || (imageUrl.endsWith('/two.jpg') && attempt === 1)) {
+      throw new Error('Temporary failure');
+    }
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-1', 'image-2', 'image-3'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  const first = await worker.runBatch(started.batchId);
+  assert.deepEqual(first.items.map(item => item.state), ['success', 'failed', 'failed']);
+
+  await worker.retryFailedBatch(started.batchId, ['image-2']);
+  const retried = await worker.runBatch(started.batchId);
+  assert.deepEqual(retried.items.map(item => item.state), ['success', 'success', 'failed']);
+  assert.deepEqual(retried.items.map(item => item.filename), ['photo.jpg', 'photo_2.jpg', 'photo_3.jpg']);
+  assert.deepEqual(retried.items.map(item => item.attempts), [1, 2, 1]);
+});
+
+test('targeted retry validates requested failed item ids', async () => {
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session: createMemoryStorage({ batchScan_7: batchScan() }),
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  worker.setSaveImageCore(async ({ imageUrl, allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'photo.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    if (imageUrl.endsWith('/two.jpg')) throw new Error('Temporary failure');
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-1', 'image-2'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  await worker.runBatch(started.batchId);
+
+  await assert.rejects(
+    worker.retryFailedBatch(started.batchId, []),
+    /choose at least one failed image/i
+  );
+  await assert.rejects(
+    worker.retryFailedBatch(started.batchId, ['missing']),
+    /unknown batch item/i
+  );
+  await assert.rejects(
+    worker.retryFailedBatch(started.batchId, ['image-1']),
+    /is not failed/i
+  );
+  await assert.rejects(
+    worker.retryFailedBatch(started.batchId, ['image-2', 'image-2']),
+    /must be unique/i
+  );
+});
+
+test('runtime retry forwards selected failed item ids', async () => {
+  const scan = batchScan([
+    { id: 'image-1', url: 'https://cdn.example/one.jpg', name: 'one.jpg' },
+    { id: 'image-2', url: 'https://cdn.example/two.jpg', name: 'two.jpg' },
+    { id: 'image-3', url: 'https://cdn.example/three.jpg', name: 'three.jpg' }
+  ]);
+  const worker = await createWorker(async () => response(200, 'OK'), {
+    session: createMemoryStorage({ batchScan_7: scan }),
+    servers: [batchServer],
+    settings: batchSettings
+  });
+  const attempts = new Map();
+  worker.setSaveImageCore(async ({ imageUrl, allocateFilename, onTargetResolved }) => {
+    const filename = allocateFilename('/Images', 'photo.jpg');
+    await onTargetResolved({ folder: '/Images', filename });
+    const attempt = (attempts.get(imageUrl) || 0) + 1;
+    attempts.set(imageUrl, attempt);
+    if ((imageUrl.endsWith('/two.jpg') && attempt === 1) || imageUrl.endsWith('/three.jpg')) {
+      throw new Error('Temporary failure');
+    }
+    return { status: 'success', message: 'Saved', filename, folder: '/Images', warningCodes: [] };
+  });
+  const started = await worker.startBatch({
+    scanId: 'scan-1',
+    tabId: 7,
+    imageIds: ['image-1', 'image-2', 'image-3'],
+    serverId: 'server-1',
+    targetFormat: 'original'
+  });
+  await worker.runBatch(started.batchId);
+
+  const result = await worker.dispatchRuntimeMessage({
+    action: 'batchPanel:retryFailed',
+    batchId: started.batchId,
+    itemIds: ['image-2']
+  });
+  assert.equal(result.success, true);
+  assert.deepEqual(result.batch.items.map(item => item.state), ['success', 'queued', 'failed']);
+  await worker.runBatch(started.batchId);
+});
+
 test('runtime batch commands accept the Side Panel and reject page senders', async () => {
   const session = createMemoryStorage({ batchScan_7: batchScan() });
   const worker = await createWorker(async () => response(200, 'OK'), {
