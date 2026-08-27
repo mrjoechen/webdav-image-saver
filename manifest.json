@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "name": "WebDAV Image Saver",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Save one image or batch-save page images to your WebDAV server with configurable naming and folders.",
     "author": "WebDAV Image Saver Team",
     "homepage_url": "https://github.com/mrjoechen/webdav-image-saver",
