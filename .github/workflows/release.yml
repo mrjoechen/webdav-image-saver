@@ -64,8 +64,8 @@ jobs:
           staging_dir="$RUNNER_TEMP/webdav-image-saver"
 
           mkdir -p "$staging_dir"
-          cp manifest.json background.js content_script.js image-format.js filename-rule.js directory-rule.js local-copy.js local-copy-fs.js settings.js PRIVACY.md STORE_DESCRIPTION.md "$staging_dir/"
-          cp -R assets icons options "$staging_dir/"
+          cp manifest.json background.js content_script.js image-discovery.js image-format.js filename-rule.js directory-rule.js local-copy.js local-copy-fs.js settings.js batch-save.js PRIVACY.md STORE_DESCRIPTION.md "$staging_dir/"
+          cp -R assets icons options sidepanel "$staging_dir/"
 
           (
             cd "$staging_dir"
