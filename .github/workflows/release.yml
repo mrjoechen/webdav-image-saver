@@ -85,7 +85,7 @@ jobs:
             gh release upload "$TAG" "$PACKAGE" --clobber
           else
             gh release create "$TAG" "$PACKAGE" \
-              --title "WebDAV Image Saver $TAG" \
+              --title "$TAG" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi
