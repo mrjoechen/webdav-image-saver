@@ -10,6 +10,7 @@
   const ALLOWED_FORMATS = new Set(['original', 'png', 'jpg', 'webp']);
   const TERMINAL_BATCH_STATES = new Set(['completed', 'cancelled']);
   const UI_PREFERENCE_KEYS = new Set(['theme', 'language']);
+  const PAGE_ACCESS_PERMISSION = Object.freeze({ origins: ['<all_urls>'] });
   const TRANSLATIONS = {
     en: {
       panelTitle: 'Batch save images',
@@ -63,7 +64,12 @@
       webdav: 'WebDAV',
       scanning: 'Scanning the current page…',
       scanUnavailable: 'Scan unavailable',
-      startingBatch: 'Starting batch save…'
+      startingBatch: 'Starting batch save…',
+      pageAccessRequired: 'Web page access required',
+      pageAccessHelp: 'Allow access to web page URLs before scanning images.',
+      grantPageAccess: 'Authorize access',
+      pageAccessDenied: 'Web page access authorization is required before images can be scanned.',
+      localFolderAuthorizationRequired: 'Local folder authorization is required before saving.'
     },
     zh: {
       panelTitle: '批量保存图片',
@@ -117,7 +123,12 @@
       webdav: 'WebDAV',
       scanning: '正在扫描当前页面…',
       scanUnavailable: '无法扫描',
-      startingBatch: '正在启动批量保存…'
+      startingBatch: '正在启动批量保存…',
+      pageAccessRequired: '需要网页访问权限',
+      pageAccessHelp: '扫描图片前，请先授权扩展读取网页 URL。',
+      grantPageAccess: '授权访问',
+      pageAccessDenied: '需要授权网页访问权限后才能扫描图片。',
+      localFolderAuthorizationRequired: '需要授权本地文件夹后才能保存。'
     }
   };
 
@@ -181,6 +192,17 @@
     }
 
     return { sync, handleStorage };
+  }
+
+  function openSettingsFromSidePanel(panelWindow, chromeApi) {
+    panelWindow?.close?.();
+    return chromeApi.runtime.openOptionsPage();
+  }
+
+  function bindSettingsAction(button, panelWindow, chromeApi) {
+    button.addEventListener('click', () => {
+      void openSettingsFromSidePanel(panelWindow, chromeApi);
+    });
   }
 
   function batchItemDetail(language, item = {}, target = '') {
@@ -281,11 +303,14 @@
     return currentIndex;
   }
 
-  function initialize(doc, chromeApi) {
+  function initialize(doc, chromeApi, { localCopyFs = globalThis.LocalCopyFs } = {}) {
     const elements = {
       pageTitle: doc.getElementById('page-title'),
       pageMeta: doc.getElementById('page-meta'),
       notice: doc.getElementById('notice'),
+      pageAccessGate: doc.getElementById('page-access-gate'),
+      pageAccessMessage: doc.getElementById('page-access-message'),
+      grantPageAccess: doc.getElementById('grant-page-access'),
       selectionView: doc.getElementById('selection-view'),
       progressView: doc.getElementById('progress-view'),
       imageList: doc.getElementById('image-list'),
@@ -318,6 +343,14 @@
     let destinationOptionElements = [];
     let currentLanguage = 'en';
     let noticeState = { message: '', kind: '' };
+    let localDirectoryHandle = null;
+    const localDirectoryHandlePromise = Promise.resolve()
+      .then(() => localCopyFs?.loadDirectoryHandle?.() || null)
+      .then(handle => {
+        localDirectoryHandle = handle || null;
+        return localDirectoryHandle;
+      })
+      .catch(() => null);
     const t = (key, replacements = {}) => translate(currentLanguage, key, replacements);
 
     function localizedMessage(key, replacements = {}) {
@@ -358,6 +391,42 @@
 
     function setText(element, value) {
       element.textContent = String(value || '');
+    }
+
+    function showPageAccessGate(visible) {
+      elements.pageAccessGate.hidden = !visible;
+      if (visible) {
+        elements.selectionView.hidden = true;
+        elements.progressView.hidden = true;
+      }
+    }
+
+    async function hasPageAccess() {
+      if (typeof chromeApi.permissions?.contains !== 'function') return true;
+      return chromeApi.permissions.contains(PAGE_ACCESS_PERMISSION);
+    }
+
+    async function requestPageAccess() {
+      if (typeof chromeApi.permissions?.request !== 'function') return false;
+      return chromeApi.permissions.request(PAGE_ACCESS_PERMISSION);
+    }
+
+    async function requestLocalFolderAccess() {
+      if (!model?.settings?.localCopy?.enabled) return true;
+      const handle = localDirectoryHandle;
+      if (!handle) return false;
+      try {
+        const options = { mode: 'readwrite' };
+        if (typeof handle.requestPermission === 'function') {
+          return await handle.requestPermission(options) === 'granted';
+        }
+        if (typeof handle.queryPermission === 'function') {
+          return await handle.queryPermission(options) === 'granted';
+        }
+        return true;
+      } catch (_error) {
+        return false;
+      }
     }
 
     function formatDimensions(image) {
@@ -628,10 +697,22 @@
       elements.newBatch.hidden = !terminal;
     }
 
-    async function loadCurrentPage() {
+    async function loadCurrentPage({ pageAccessGranted = false } = {}) {
       try {
+        const granted = pageAccessGranted || await hasPageAccess();
+        if (!granted) {
+          model = null;
+          currentBatch = null;
+          showPageAccessGate(true);
+          setNotice('');
+          return;
+        }
+        showPageAccessGate(false);
         setLoading(true, localizedMessage('scanning'));
-        const contextResponse = await send({ action: 'batchPanel:getContext' });
+        const [contextResponse] = await Promise.all([
+          send({ action: 'batchPanel:getContext' }),
+          localDirectoryHandlePromise
+        ]);
         context = contextResponse.context;
         if (context.activeBatch && !TERMINAL_BATCH_STATES.has(context.activeBatch.state)) {
           renderBatch(context.activeBatch);
@@ -686,7 +767,26 @@
       renderSelection();
     });
     elements.refresh.addEventListener('click', loadCurrentPage);
-    elements.settings.addEventListener('click', () => chromeApi.runtime.openOptionsPage());
+    elements.grantPageAccess.addEventListener('click', async () => {
+      const permissionRequest = requestPageAccess();
+      elements.grantPageAccess.disabled = true;
+      try {
+        const granted = await permissionRequest;
+        if (!granted) {
+          showPageAccessGate(true);
+          setNotice(localizedMessage('pageAccessDenied'), 'warning');
+          return;
+        }
+        setNotice('');
+        await loadCurrentPage({ pageAccessGranted: true });
+      } catch (_error) {
+        showPageAccessGate(true);
+        setNotice(localizedMessage('pageAccessDenied'), 'warning');
+      } finally {
+        elements.grantPageAccess.disabled = false;
+      }
+    });
+    bindSettingsAction(elements.settings, view, chromeApi);
     elements.destinationTrigger.addEventListener('click', toggleDestination);
     elements.destinationTrigger.addEventListener('keydown', handleDestinationTriggerKeydown);
     elements.format.addEventListener('change', () => {
@@ -695,6 +795,13 @@
     });
     elements.save.addEventListener('click', async () => {
       if (!canStartBatch(model)) return;
+      const localFolderPermission = requestLocalFolderAccess();
+      elements.save.disabled = true;
+      if (!(await localFolderPermission)) {
+        elements.save.disabled = false;
+        setNotice(localizedMessage('localFolderAuthorizationRequired'), 'warning');
+        return;
+      }
       try {
         setLoading(true, localizedMessage('startingBatch'));
         const response = await send({
@@ -750,6 +857,7 @@
   return {
     applyDocumentLanguage,
     batchItemDetail,
+    bindSettingsAction,
     createPanelModel,
     createDestinationMenu,
     createUiPreferenceSync,

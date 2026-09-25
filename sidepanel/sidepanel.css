@@ -263,6 +263,47 @@ button:disabled {
   border-color: color-mix(in srgb, var(--warning) 36%, var(--border));
 }
 
+.permission-gate {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: 24px 16px;
+  padding: 28px 22px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.permission-gate-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: var(--text-primary);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.permission-gate h2 {
+  font-size: 1rem;
+  font-weight: 680;
+}
+
+.permission-gate p {
+  max-width: 34ch;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+#grant-page-access {
+  margin-top: 4px;
+}
+
 .toolbar {
   display: flex;
   align-items: center;

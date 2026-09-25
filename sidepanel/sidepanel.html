@@ -24,6 +24,18 @@
       </button>
     </header>
 
+    <section id="page-access-gate" class="permission-gate" aria-labelledby="page-access-title" hidden>
+      <div class="permission-gate-icon" aria-hidden="true">
+        <svg class="ui-icon" viewBox="0 0 24 24">
+          <path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+      </div>
+      <h2 id="page-access-title" data-i18n="pageAccessRequired">Web page access required</h2>
+      <p id="page-access-message" data-i18n="pageAccessHelp">Allow access to web page URLs before scanning images.</p>
+      <button id="grant-page-access" class="primary-button" type="button" data-i18n="grantPageAccess">Authorize access</button>
+    </section>
+
     <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
 
     <section id="selection-view" class="selection-view">
@@ -102,6 +114,7 @@
       </div>
     </section>
   </main>
+  <script src="../local-copy-fs.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

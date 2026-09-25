@@ -40,6 +40,243 @@ const images = [
   { id: 'image-2', url: 'https://cdn.example/two.jpg', name: 'two.jpg' }
 ];
 
+function createPanelElement(id) {
+  const listeners = new Map();
+  const attributes = new Map(id === 'destination-trigger' ? [['aria-expanded', 'false']] : []);
+  const classes = new Set();
+  const children = [];
+  return {
+    id,
+    hidden: id === 'page-access-gate' || id === 'progress-view',
+    disabled: false,
+    checked: false,
+    value: '',
+    textContent: '',
+    className: '',
+    dataset: {},
+    children,
+    classList: {
+      add(...names) { names.forEach(name => classes.add(name)); },
+      remove(...names) { names.forEach(name => classes.delete(name)); },
+      toggle(name, force) {
+        const enabled = force === undefined ? !classes.has(name) : Boolean(force);
+        if (enabled) classes.add(name); else classes.delete(name);
+        return enabled;
+      },
+      contains(name) { return classes.has(name); }
+    },
+    addEventListener(type, listener) {
+      listeners.set(type, [...(listeners.get(type) || []), listener]);
+    },
+    async emit(type, event = {}) {
+      const prepared = { target: this, preventDefault() {}, stopPropagation() {}, ...event };
+      return Promise.all((listeners.get(type) || []).map(listener => listener(prepared)));
+    },
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    getAttribute(name) { return attributes.get(name) || null; },
+    append(...nodes) { children.push(...nodes); },
+    appendChild(node) { children.push(node); return node; },
+    replaceChildren(...nodes) { children.splice(0, children.length, ...nodes); },
+    contains(target) { return target === this || children.includes(target); },
+    focus() {}
+  };
+}
+
+function createSidePanelHarness({ pageAccess = true, localCopyEnabled = false, localCopyFs } = {}) {
+  const ids = [
+    'page-title', 'page-meta', 'notice', 'page-access-gate', 'page-access-message', 'grant-page-access',
+    'selection-view', 'progress-view', 'image-list', 'empty-state', 'selected-count', 'select-all',
+    'clear-selection', 'refresh', 'open-settings', 'destination', 'destination-select',
+    'destination-trigger', 'destination-value', 'destination-options', 'format-field', 'format', 'save',
+    'progress-title', 'progress-meta', 'batch-progress', 'batch-items', 'cancel-batch', 'retry-failed',
+    'new-batch'
+  ];
+  const elements = Object.fromEntries(ids.map(id => [id, createPanelElement(id)]));
+  const documentListeners = new Map();
+  const doc = {
+    title: '',
+    documentElement: { dataset: {}, lang: '' },
+    defaultView: {
+      localStorage: { getItem: () => null },
+      addEventListener() {},
+      close() {}
+    },
+    getElementById: id => elements[id],
+    querySelectorAll: () => [],
+    createElement: id => createPanelElement(id),
+    createElementNS: (_namespace, id) => createPanelElement(id),
+    addEventListener(type, listener) {
+      documentListeners.set(type, [...(documentListeners.get(type) || []), listener]);
+    }
+  };
+  const runtimeCalls = [];
+  const permissionCalls = [];
+  const order = [];
+  let accessGranted = pageAccess;
+  const chromeApi = {
+    permissions: {
+      async contains(permission) {
+        permissionCalls.push({ method: 'contains', permission });
+        return accessGranted;
+      },
+      async request(permission) {
+        permissionCalls.push({ method: 'request', permission });
+        accessGranted = true;
+        return true;
+      }
+    },
+    runtime: {
+      onMessage: { addListener() {} },
+      async openOptionsPage() {},
+      async sendMessage(message) {
+        runtimeCalls.push(message);
+        if (message.action === 'batchPanel:getContext') {
+          return {
+            success: true,
+            context: {
+              tab: { id: 7, url: 'https://page.example/article', title: 'Article' },
+              servers: [{ id: 'server-1', name: 'NAS', folder: '/Images' }],
+              settings: {
+                image: { saveFormat: 'original' },
+                localCopy: { enabled: localCopyEnabled, folderName: 'Pictures' }
+              },
+              activeBatch: null
+            }
+          };
+        }
+        if (message.action === 'batchPanel:scan') {
+          return {
+            success: true,
+            scan: {
+              scanId: 'scan-1',
+              tabId: 7,
+              pageUrl: 'https://page.example/article',
+              pageTitle: 'Article',
+              images
+            }
+          };
+        }
+        if (message.action === 'batchPanel:start') {
+          order.push('start-batch');
+          return {
+            success: true,
+            batch: {
+              batchId: 'batch-1',
+              state: 'running',
+              serverName: 'NAS',
+              items: [],
+              summary: { total: 2, completed: 0 }
+            }
+          };
+        }
+        throw new Error(`Unexpected action: ${message.action}`);
+      }
+    },
+    tabs: { onActivated: { addListener() {} } }
+  };
+
+  SidePanelApp.initialize(doc, chromeApi, { localCopyFs });
+  return { chromeApi, doc, elements, order, permissionCalls, runtimeCalls };
+}
+
+async function flushPanel() {
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+}
+
+test('opening the side panel gates page scanning until URL access is granted', async () => {
+  const harness = createSidePanelHarness({ pageAccess: false });
+  await flushPanel();
+
+  assert.deepEqual(harness.permissionCalls, [{
+    method: 'contains',
+    permission: { origins: ['<all_urls>'] }
+  }]);
+  assert.deepEqual(harness.runtimeCalls, []);
+  assert.equal(harness.elements['page-access-gate'].hidden, false);
+  assert.equal(harness.elements['selection-view'].hidden, true);
+
+  await harness.elements['grant-page-access'].emit('click');
+  await flushPanel();
+
+  assert.deepEqual(harness.permissionCalls.at(-1), {
+    method: 'request',
+    permission: { origins: ['<all_urls>'] }
+  });
+  assert.deepEqual(harness.runtimeCalls.map(call => call.action), [
+    'batchPanel:getContext',
+    'batchPanel:scan'
+  ]);
+  assert.equal(harness.elements['page-access-gate'].hidden, true);
+  assert.equal(harness.elements['selection-view'].hidden, false);
+});
+
+test('save requests local folder permission before starting a local-copy batch', async () => {
+  const order = [];
+  const directoryHandle = {
+    async requestPermission({ mode }) {
+      assert.equal(mode, 'readwrite');
+      order.push('request-local');
+      return 'granted';
+    }
+  };
+  const harness = createSidePanelHarness({
+    localCopyEnabled: true,
+    localCopyFs: { loadDirectoryHandle: async () => directoryHandle }
+  });
+  harness.order.push = value => {
+    order.push(value);
+    return order.length;
+  };
+  await flushPanel();
+
+  await harness.elements.save.emit('click');
+  await flushPanel();
+
+  assert.deepEqual(order, ['request-local', 'start-batch']);
+  assert.equal(harness.runtimeCalls.at(-1).action, 'batchPanel:start');
+});
+
+test('save shows authorization required and does not start when local folder access is denied', async () => {
+  const directoryHandle = { requestPermission: async () => 'denied' };
+  const harness = createSidePanelHarness({
+    localCopyEnabled: true,
+    localCopyFs: { loadDirectoryHandle: async () => directoryHandle }
+  });
+  await flushPanel();
+
+  await harness.elements.save.emit('click');
+  await flushPanel();
+
+  assert.equal(harness.runtimeCalls.some(call => call.action === 'batchPanel:start'), false);
+  assert.equal(harness.elements.notice.hidden, false);
+  assert.match(harness.elements.notice.className, /warning/);
+  assert.match(harness.elements.notice.textContent, /authoriz|permission/i);
+});
+
+test('settings action closes the side panel before opening the options page', async () => {
+  const calls = [];
+  const settingsButton = new EventTarget();
+  const panelWindow = {
+    close() {
+      calls.push('close-panel');
+    }
+  };
+  const chromeApi = {
+    runtime: {
+      async openOptionsPage() {
+        calls.push('open-options');
+      }
+    }
+  };
+
+  SidePanelApp.bindSettingsAction(settingsButton, panelWindow, chromeApi);
+  settingsButton.dispatchEvent(new Event('click'));
+  await Promise.resolve();
+
+  assert.deepEqual(calls, ['close-panel', 'open-options']);
+});
+
 test('side panel shares the settings page visual tokens', () => {
   const settingsTokens = declarationsFor(optionsCss, ':root');
   const panelTokens = declarationsFor(sidePanelCss, ':root');
