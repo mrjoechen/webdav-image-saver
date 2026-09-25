@@ -444,15 +444,39 @@ async function cancelBatch(batchId) {
     return BatchSave.toPublicBatch(batch);
 }
 
-async function retryFailedBatch(batchId) {
+function failedRetryIds(batch, itemIds) {
+    const failedItems = batch.items.filter(item => item.state === 'failed');
+    if (itemIds === undefined) {
+        if (failedItems.length === 0) throw new Error('This batch has no failed images to retry.');
+        return new Set(failedItems.map(item => item.id));
+    }
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        throw new Error('Choose at least one failed image to retry.');
+    }
+
+    const requestedIds = itemIds.map(itemId => String(itemId || ''));
+    if (new Set(requestedIds).size !== requestedIds.length) {
+        throw new Error('Retry image IDs must be unique.');
+    }
+
+    const itemsById = new Map(batch.items.map(item => [item.id, item]));
+    for (const itemId of requestedIds) {
+        const item = itemsById.get(itemId);
+        if (!item) throw new Error(`Unknown batch item: ${itemId}`);
+        if (item.state !== 'failed') throw new Error(`Batch item is not failed: ${itemId}`);
+    }
+    return new Set(requestedIds);
+}
+
+async function retryFailedBatch(batchId, itemIds) {
     const batch = await updateBatch(batchId, current => {
         if (!isTerminalBatchState(current.state)) throw new Error('Wait for the current batch to finish before retrying.');
-        if (!current.items.some(item => item.state === 'failed')) throw new Error('This batch has no failed images to retry.');
+        const requestedIds = failedRetryIds(current, itemIds);
         return {
             ...current,
             state: 'queued',
             updatedAt: Date.now(),
-            items: current.items.map(item => item.state === 'failed'
+            items: current.items.map(item => requestedIds.has(item.id)
                 ? { ...item, state: 'queued', message: '', error: '', warningCodes: [] }
                 : item)
         };
@@ -694,7 +718,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return keepMessageChannelOpen(
             Promise.resolve().then(() => {
                 assertSidePanelSender(sender);
-                return retryFailedBatch(String(message.batchId || ''));
+                return retryFailedBatch(String(message.batchId || ''), message.itemIds);
             }),
             sendResponse,
             batch => ({ success: true, batch })
